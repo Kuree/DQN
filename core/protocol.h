@@ -1,10 +1,13 @@
 struct dqn_tr{
- 	// 2 bytes
-	uint16_t 	    id;
-	// 1 byte
+    // 2 bytes
+    uint16_t        id;
+    // 1 byte
+    // NOTICE: since we don't want to a device requests 0 data slots
+    // everything is added by 1. e.g. if the this attribute is 1, the device is
+    // actually requesting for 2 data slots. Hence the range is 1-N
     uint8_t  	    num_slots;
     // 1 byte
-	uint8_t		    crc
+    uint8_t		    crc
 } __attribute__((packed));  // total is 4 bytes
 
 
@@ -22,6 +25,31 @@ struct feedback{
     // 8 bytes
     uint64_t        result; // this is bloom filter result
 } __attribute__((packed));  // total is 12 bytes
+
+
+/* Bloom filter usage in feedback slot
+ * there are three status for a mini slot: idle, requested, contended:
+ * for an idle slot, 0 is assigned;
+ * for requested slot, the number of data slots in assigned, up to N;
+ * for a contended slot, N+1 is assigned.
+ * then the status of mini slot is appened to the slot number. To avoid
+ * conflicts, mini slots are counted from 1 and padded 0 zeros before status code.
+ * For instance, suppose N=16, mini slot 1 idle will be 1000, 
+ * mini slot 2 contended will be 20017, and mini slot 3 requested 5 slots will
+ * be 3005.
+ *
+ * After obtain a number, a hash function is applied to the number and hash to a bit position.
+ * Thus it follows the Bloom filter
+ *
+ *
+ * Once the device recieves the Bloom filter result, it will reverse the hashing process by trying
+ * out all the possibilities to see if they're in the Bloom filter. 
+ * For instance, it will try mini slot 1 idle, requested 1 slot, requested 2 slots, etc. 
+ * Then it will use this information to reconstruct the original feedback information.
+ * The runtime will be O(mN), where m is the number of mini slots and N will be number
+ * of data slots.
+ */
+
 
 
 // this is used to hash an integer value into

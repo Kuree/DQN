@@ -1,3 +1,8 @@
+#ifndef PROTOCOL_H
+#define PROTOCOL_H
+#include <stdint.h>
+#include <stdbool.h>
+
 struct dqn_tr{
     // 2 bytes
     uint16_t        id;
@@ -7,13 +12,13 @@ struct dqn_tr{
     // actually requesting for 2 data slots. Hence the range is 1-N
     uint8_t  	    num_slots;
     // 1 byte
-    uint8_t		    crc
+    uint8_t		    crc;
 } __attribute__((packed));  // total is 4 bytes
 
 
 struct dqn_data{
     // 30 bytes
-    uint8_t[30]     data
+    uint8_t     data[30];
 } __attribute__((packed));  // total is 30 bytes
 
 
@@ -56,4 +61,17 @@ struct feedback{
 // to create a new bloom filter, pass 0 as the hash_value to initialize it
 uint64_t bloom_hash(uint64_t hash_value, int value);
 
-bool bloom_test(int value);
+bool bloom_test(uint64_t hash_value, int value);
+
+// used by the client
+void send_data(char* data);
+
+// used by the server
+// may not be used
+int receive_data(char* buffer);
+
+// used to get feedback from the base station
+// can be used to synchronize the clock
+void get_feedback(struct feedback *fb);
+
+#endif

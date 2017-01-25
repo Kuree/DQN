@@ -109,11 +109,11 @@ int main (int argc, const char* argv[] )
     uint8_t from, to, id, flags;
 
     if (millis() - last_send > 3000){
-      struct rf_message msg;
+      uint8_t message[3] = {'s', 'u', 'p'};
       last_send = millis();
       printf("Sending hello... ");
 
-      if (!rf95.send(make_packet(&msg, packet_num++, "hello server"), sizeof(rf_message))){
+      if (!rf95.send(message, 4)){
         printf("failed.\n");
       }else{
         printf("complete.\n");

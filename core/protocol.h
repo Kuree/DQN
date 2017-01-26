@@ -1,3 +1,12 @@
+#define DQN_M 4
+#define DQN_N 8
+#define DQN_LENGTH 400
+#define DQN_MINI_SLOT_LENGTH 200
+#define DQN_IDLE 0
+#define DQN_SUCCESS 1
+#define DQN_CONTEND 2
+#define DQN_FB_LENGTH DQN_M * 2 / 8
+
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 #include <stdint.h>
@@ -22,13 +31,16 @@ struct dqn_data{
 } __attribute__((packed));  // total is 30 bytes
 
 
-struct feedback{
+struct  dqn_feedback{
     // 2 bytes
     uint16_t        dtq_length;
     // 2 bytes
     uint16_t        crq_length;
     // 8 bytes
-    uint64_t        result; // this is bloom filter result
+    // NOT USED
+    // uint64_t        result; // this is bloom filter result
+    uint8_t         slots[DQN_FB_LENGTH];
+    // TODO: add crc in feedback
 } __attribute__((packed));  // total is 12 bytes
 
 
@@ -74,4 +86,5 @@ int receive_data(char* buffer);
 // can be used to synchronize the clock
 void get_feedback(struct feedback *fb);
 
+uint8_t get_crc8(char *data, int len);
 #endif

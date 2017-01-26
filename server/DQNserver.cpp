@@ -38,161 +38,184 @@ RH_RF95 rf95(RF95_CS_PIN, RF95_INT_PIN);
 volatile sig_atomic_t flag = 0;
 
 //Main Function
-int main (int argc, const char* argv[] )
-{
-  signal(SIGINT, sig_handler);
+int main (int argc, const char* argv[] ){
+    signal(SIGINT, sig_handler);
 
-  wiringPiSetup();
+    wiringPiSetup();
+    
+    printf( "\nRasPiRH95 Tester Startup\n\n" );
 
-  printf( "\nRasPiRH95 Tester Startup\n\n" );
+    /* Begin Driver Only Init Code */
+    pinMode(RF95_RESET_PIN, OUTPUT);
+    pinMode(TX_PIN, OUTPUT);
+    pinMode(RX_PIN, OUTPUT);
+    digitalWrite(TX_PIN, HIGH);
+    digitalWrite(RX_PIN, HIGH);
 
-  /* Begin Driver Only Init Code */
-  pinMode(RF95_RESET_PIN, OUTPUT);
-  pinMode(TX_PIN, OUTPUT);
-  pinMode(RX_PIN, OUTPUT);
-  digitalWrite(TX_PIN, HIGH);
-  digitalWrite(RX_PIN, HIGH);
+    digitalWrite(RF95_RESET_PIN, HIGH);
+    delay(50);
+    digitalWrite(RF95_RESET_PIN, LOW);
+    delay(50);
+    digitalWrite(RF95_RESET_PIN, HIGH);
+    delay(50);
 
-  digitalWrite(RF95_RESET_PIN, HIGH);
-  delay(50);
-  digitalWrite(RF95_RESET_PIN, LOW);
-  delay(50);
-  digitalWrite(RF95_RESET_PIN, HIGH);
-  delay(50);
+    printf("Reset high, waiting 1 sec.\n");
+    delay(1000);
 
-  printf("Reset high, waiting 1 sec.\n");
-  delay(1000);
+    digitalWrite(TX_PIN, LOW);
+    digitalWrite(RX_PIN, LOW);
 
-  digitalWrite(TX_PIN, LOW);
-  digitalWrite(RX_PIN, LOW);
-
-  if (!rf95.init()){
-    printf("rf95 init failed.\n");
-    exit(-95);
-  }else{
-    printf("rf95 init success.\n");
-  }
-  if (!rf95.setFrequency (915.0)){
-    printf("rf95 set freq failed.\n");
-    exit(-96);
-  }else{
-    printf("rf95 set freq to %5.2f.\n", 915.0);
-  }
-
-  if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
-    printf("rf95 configuration set to BW=500 kHz BW, CR=4/5 CR, SF=7.\n");
-  }else{
-    printf("rf95 configuration failed.\n");
-    exit(-97);
-  }
-
-  rf95.setTxPower(23, false);
-  /* End Driver Only Init Code */
-
-  /* Begin Reliable Datagram Init Code
-  if (!manager.init())
-  {
-    printf( "Init failed\n" );
-  }
-   End Reliable Datagram Init Code */
-
-  uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-
-  printf("waiting for packets...\n");
-  //Begin the main body of code
-
-  int last_send = millis();
-  int packet_num = 0;
-  while (true)
-  {
-    uint8_t len = sizeof(buf);
-    uint8_t from, to, id, flags;
-
-    if (millis() - last_send > 3000){
-      uint8_t message[3] = {'s', 'u', 'p'};
-      last_send = millis();
-      printf("Sending hello... ");
-
-      if (!rf95.send(message, 4)){
-        printf("failed.\n");
-      }else{
-        printf("complete.\n");
-      }
-
+    if (!rf95.init()){
+        printf("rf95 init failed.\n");
+        exit(-95);
+    }else{
+        printf("rf95 init success.\n");
+    }
+    if (!rf95.setFrequency (915.0)){
+        printf("rf95 set freq failed.\n");
+        exit(-96);
+    }else{
+        printf("rf95 set freq to %5.2f.\n", 915.0);
     }
 
-    /* Begin Driver Only code */
-    if (rf95.available())
-    {
-      // Should be a message for us now
-      uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-      uint8_t len = sizeof(buf);
-      if (rf95.recv(buf, &len))
-      {
-        uint32_t a, b;
-
-        char echo[RH_RF95_MAX_MESSAGE_LEN] = "";
-        int8_t rssi = rf95.lastRssi();
-        printf("echoing data [%d dBm]: ", rssi);
-        printf("%s\n",(char*)buf);
-
-        strcat(echo, "echo: ");
-        strcat(echo, (char*)buf);
-        a = micros();
-        rf95.send((uint8_t*)echo, len+6);
-        rf95.waitPacketSent();
-        b = micros();
-        printf("Send took %6.3f ms\n", (b-a) / 1000.0);
-      }
-      else
-      {
-        printf("recv failed");
-      }
+    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
+        printf("rf95 configuration set to BW=500 kHz BW, CR=4/5 CR, SF=7.\n");
+    }else{
+        printf("rf95 configuration failed.\n");
+        exit(-97);
     }
-    /* End Driver Only Code */
 
-    /* Begin Reliable Datagram Code
-    if (manager.available())
-    {
-      // Wait for a message addressed to us from the client
-      uint8_t len = sizeof(buf);
-      uint8_t from;
-      if (manager.recvfromAck(buf, &len, &from))
-      {
-        Serial.print("got request from : 0x");
-        Serial.print(from, HEX);
-        Serial.print(": ");
-        Serial.println((char*)buf);
-      }
+    rf95.setTxPower(23, false);
+
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+
+    // parameters used by DQN
+    const uint32_t OFFSET_TIME = millis();
+    const uint32_t MINI_SLOT_TIME = DQN_MINI_SLOT_LENGTH / DQN_M;
+    uint16_t crq = 0;
+    uint16_t dtq = 0;
+
+    while (true){
+        const uint32_t CYCLE_START_TIME = millis();
+        uint8_t len = sizeof(buf);
+        uint8_t from, to, id, flags;
+        uint16_t new_crq = crq;
+        uint16_t new_dqt = dtq;
+        
+        // setup TR counter
+        uint8_t tr_results[DQN_M];
+        for(uint8_t i = 0; i < DQN_M; i++){
+            tr_results[i] = DQN_IDLE;
+        }
+
+        // wait for mini slot requests
+        // TODO: need to adjust this time based on how fast
+        // the packet can transmit
+        while(millis() < CYCLE_START_TIME + DQN_MINI_SLOT_LENGTH){
+            if(rf95.available()){
+                uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+                uint8_t len = sizeof(buf);
+                if (rf95.recv(buf, &len)){
+                    struct dqn_tr* tr = (struct dqn_tr *)buf;
+                    uint8_t crn = tr->crn;
+                    tr->crn = 0;
+                    uint8_t packet_crn = get_crn8(tr, 3); // only 3 bytes need to calculate
+                    // calculate the slot number
+                    uint16_t time_offset = millis() - CYCLE_START_TIME;
+                    uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
+                    // set the status of the mini slot 
+                    if(packet_crn == crn){
+                        tr_results[mini_slot] = DQN_SUCCESS;
+                        new_dtq += tr->num_slots;
+                    } else{
+                        tr_results[mini_slot] = DQN_CONTEND;
+                        new_crq += 1;
+                    }
+                }
+            }
+        }
+
+        // immediately send the feedback result 
+        // so that TR and feedback will be put into the same channel frequency later on
+        struct dqn_feedback feedback;
+        feedback.crq = crq;
+        feedback.drq = dtq;
+        // process the mini slots
+        for(int i = 0; i < DQN_FB_LENGTH; i++){
+            uint8_t result = 0;
+            for(int j = 0; j < 4; j++){
+                // each status only needs 2 bits
+                uint8_t status = tr_results[j + i * 4];
+                // adding crq and dtq accordingly
+                result |= status << (3 - j); // lower address to high address
+            }
+            feedback.slots[i] = result;
+        }
+
+        // send the feedback
+        if(!rf95.send(&feedback, sizeof(feedback))){
+            printf("sending feedback failed");
+        } else{
+            print("sent feedback with status %b\tcrq: %d\tdtq:%d", 
+                    feedback.slots[0], feedback.crq, feedback.dtq);
+        }
+
+        // defuce the queue length
+        dtq = new_dtq - DQN_N;
+        crq = new_crq - 1;
+        
+
+        // now receive data for N slots
+
+        /* Begin Driver Only code */
+        if (rf95.available())
+        {
+            // Should be a message for us now
+            uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+            uint8_t len = sizeof(buf);
+            if (rf95.recv(buf, &len))
+            {
+                uint32_t a, b;
+
+                char echo[RH_RF95_MAX_MESSAGE_LEN] = "";
+                int8_t rssi = rf95.lastRssi();
+                printf("echoing data [%d dBm]: ", rssi);
+                printf("%s\n",(char*)buf);
+
+                strcat(echo, "echo: ");
+                strcat(echo, (char*)buf);
+                rf95.send((uint8_t*)echo, len+6);
+                rf95.waitPacketSent();
+            }
+            else
+            {
+                printf("recv failed");
+            }
+        }
+        
+        if (flag)
+        {
+            printf("\n---CTRL-C Caught - Exiting---\n");
+            break;
+        }
     }
-    End Reliable Datagram Code */
 
-    if (flag)
-    {
-      printf("\n---CTRL-C Caught - Exiting---\n");
-      break;
-    }
-    //sleep(1);
-    delay(25);
-  }
-  printf( "\nRasPiRH95 Tester Ending\n" );
-
-  return 0;
+    return 0;
 }
 
 void sig_handler(int sig)
 {
-  if (flag == 1){
-    printf("\n--- Double CTRL-L - panic stop---\n");
-    exit(-99);
-  }
-  flag=1;
+    if (flag == 1){
+        printf("\n--- Double CTRL-L - panic stop---\n");
+        exit(-99);
+    }
+    flag=1;
 }
 
 void printbuffer(uint8_t buff[], int len)
 {
-  for (int i = 0; i< len; i++)
-  {
-    printf(" %2X", buff[i]);
-  }
+    for (int i = 0; i< len; i++)
+    {
+        printf(" %2X", buff[i]);
+    }
 }

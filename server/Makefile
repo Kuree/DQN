@@ -57,10 +57,13 @@ RHGenericDriver.o: $(RADIOHEADBASE)/RHGenericDriver.cpp
 RHGenericSPI.o: $(RADIOHEADBASE)/RHGenericSPI.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
+protocol.o: ../core/protocol.c
+	$(CC) $(FLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
+
 DQNserver.o: DQNserver.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
-DQNserver: DQNserver.o RH_RF95.o RasPiWiring.o RHHardwareSPI.o RHSPIDriver.o RHGenericDriver.o RHGenericSPI.o
+DQNserver: DQNserver.o protocol.o RH_RF95.o RasPiWiring.o RHHardwareSPI.o RHSPIDriver.o RHGenericDriver.o RHGenericSPI.o
 	$(CC) $(addprefix $(BUILDDIR)/,$^) $(LIBS) -o DQNserver
 
 clean:

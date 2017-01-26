@@ -119,7 +119,7 @@ int main (int argc, const char* argv[] ){
                     struct dqn_tr* tr = (struct dqn_tr *)buf;
                     uint8_t crc = tr->crc;
                     tr->crc = 0;
-                    uint8_t packet_crc = get_crc8(tr, 3); // only 3 bytes need to calculate
+                    uint8_t packet_crc = get_crc8((char*)tr, 3); // only 3 bytes need to calculate
                     // calculate the slot number
                     uint16_t time_offset = millis() - CYCLE_START_TIME;
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
@@ -139,7 +139,7 @@ int main (int argc, const char* argv[] ){
         // so that TR and feedback will be put into the same channel frequency later on
         struct dqn_feedback feedback;
         feedback.crq_length = crq;
-        feedback.drq_length = dtq;
+        feedback.dtq_length = dtq;
         // process the mini slots
         for(int i = 0; i < DQN_FB_LENGTH; i++){
             uint8_t result = 0;
@@ -156,7 +156,7 @@ int main (int argc, const char* argv[] ){
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
         } else{
-            print("sent feedback with status %b\tcrq: %d\tdtq:%d", 
+            printf("sent feedback with status %b\tcrq: %d\tdtq:%d", 
                     feedback.slots[0], feedback.crq_length, feedback.dtq_length);
         }
 

@@ -28,3 +28,7 @@ uint64_t hash(uint64_t x) {
 // this is a blocking method
 void send_data(char* data){
 }
+
+uint8_t get_crc8(char *data, int len){
+    return 0;
+}

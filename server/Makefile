@@ -27,9 +27,6 @@ RH_RF95.o: $(RADIOHEADBASE)/RH_RF95.cpp
 RHHardwareSPI.o: $(RADIOHEADBASE)/RHHardwareSPI.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
-RHNRFSPIDriver.o: $(RADIOHEADBASE)/RHNRFSPIDriver.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
 RHSPIDriver.o: $(RADIOHEADBASE)/RHSPIDriver.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
@@ -39,7 +36,7 @@ RHGenericDriver.o: $(RADIOHEADBASE)/RHGenericDriver.cpp
 RHGenericSPI.o: $(RADIOHEADBASE)/RHGenericSPI.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
-protocol.o: ../core/protocol.c
+protocol.o: ../core/protocol.cpp
 	$(CC) $(FLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
 DQNserver.o: DQNserver.cpp

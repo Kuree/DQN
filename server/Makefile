@@ -18,28 +18,10 @@ all: builddir DQNserver
 builddir:
 	mkdir -p $(BUILDDIR)
 
-RasPi.o: $(RADIOHEADBASE)/RHutil/RasPi.cpp
-	$(CC) $(CFLAGS) -c $^ $(INCLUDE) -o $(BUILDDIR)/$@
-
 RasPiWiring.o: $(RADIOHEADBASE)/RHutil/RasPiWiring.cpp
 	$(CC) $(CFLAGS) -c $^ $(INCLUDE) -o $(BUILDDIR)/$@
 
-basestation.o: basestation.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
 RH_RF95.o: $(RADIOHEADBASE)/RH_RF95.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHMesh.o: $(RADIOHEADBASE)/RHMesh.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHRouter.o: $(RADIOHEADBASE)/RHRouter.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHReliableDatagram.o: $(RADIOHEADBASE)/RHReliableDatagram.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHDatagram.o: $(RADIOHEADBASE)/RHDatagram.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
 RHHardwareSPI.o: $(RADIOHEADBASE)/RHHardwareSPI.cpp

@@ -20,7 +20,6 @@
 
 //Function Definitions
 void sig_handler(int sig);
-void printbuffer(uint8_t buff[], int len);
 
 // pin numers use wiringPi numbers.
 #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
@@ -42,7 +41,7 @@ int main (int argc, const char* argv[] ){
     signal(SIGINT, sig_handler);
 
     wiringPiSetup();
-    
+
     printf( "\nRasPiRH95 Tester Startup\n\n" );
 
     /* Begin Driver Only Init Code */
@@ -101,7 +100,9 @@ int main (int argc, const char* argv[] ){
         uint8_t from, to, id, flags;
         uint16_t new_crq = crq;
         uint16_t new_dtq = dtq;
-        
+
+        int a, b; // this is used for debug information
+
         // setup TR counter
         uint8_t tr_results[DQN_M];
         for(uint8_t i = 0; i < DQN_M; i++){
@@ -153,21 +154,39 @@ int main (int argc, const char* argv[] ){
         }
 
         // send the feedback
+        a = micros();
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
         } else{
-            printf("sent feedback with status %b\tcrq: %d\tdtq:%d", 
-                    feedback.slots[0], feedback.crq_length, feedback.dtq_length);
+            b = micros();
+            printf("sent feedback with status %X\tcrq: %d\tdtq:%d\ttook %dus to send %d bytes\n", 
+                    feedback.slots[0], feedback.crq_length, feedback.dtq_length, b-a, sizeof(feedback));
         }
 
-        // defuce the queue length
-        dtq = new_dtq - DQN_N;
-        crq = new_crq - 1;
-        
+        // reduce the queue length
+        dtq = new_dtq > DQN_N? new_dtq - DQN_N: 0;
+        crq = new_crq > 1? new_crq - 1: 0;
 
-        // now receive data for N slots
 
-                
+        // moved to the receive window
+        // DQN_LENGTH ms for overhead 
+        delay(DQN_LENGTH - (millis() - CYCLE_START_TIME));
+
+        while(millis() < CYCLE_START_TIME + DQN_LENGTH * (DQN_N + 1)){
+            // TODO: add channel hopping
+            if(rf95.available()){
+                // TODO: assemble the fragment together and return to the library user
+                uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+                uint8_t len = sizeof(buf);
+                if (rf95.recv(buf, &len))
+                {
+                    printf("receiving data...");
+                } else{
+                    printf("receiving failed");
+                }
+            }
+        }
+
         if (flag)
         {
             printf("\n---CTRL-C Caught - Exiting---\n");
@@ -187,10 +206,3 @@ void sig_handler(int sig)
     flag=1;
 }
 
-void printbuffer(uint8_t buff[], int len)
-{
-    for (int i = 0; i< len; i++)
-    {
-        printf(" %2X", buff[i]);
-    }
-}

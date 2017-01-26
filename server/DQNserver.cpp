@@ -100,7 +100,7 @@ int main (int argc, const char* argv[] ){
         uint8_t len = sizeof(buf);
         uint8_t from, to, id, flags;
         uint16_t new_crq = crq;
-        uint16_t new_dqt = dtq;
+        uint16_t new_dtq = dtq;
         
         // setup TR counter
         uint8_t tr_results[DQN_M];
@@ -117,14 +117,14 @@ int main (int argc, const char* argv[] ){
                 uint8_t len = sizeof(buf);
                 if (rf95.recv(buf, &len)){
                     struct dqn_tr* tr = (struct dqn_tr *)buf;
-                    uint8_t crn = tr->crn;
-                    tr->crn = 0;
-                    uint8_t packet_crn = get_crn8(tr, 3); // only 3 bytes need to calculate
+                    uint8_t crc = tr->crc;
+                    tr->crc = 0;
+                    uint8_t packet_crc = get_crc8(tr, 3); // only 3 bytes need to calculate
                     // calculate the slot number
                     uint16_t time_offset = millis() - CYCLE_START_TIME;
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
                     // set the status of the mini slot 
-                    if(packet_crn == crn){
+                    if(packet_crc == crc){
                         tr_results[mini_slot] = DQN_SUCCESS;
                         new_dtq += tr->num_slots;
                     } else{
@@ -138,8 +138,8 @@ int main (int argc, const char* argv[] ){
         // immediately send the feedback result 
         // so that TR and feedback will be put into the same channel frequency later on
         struct dqn_feedback feedback;
-        feedback.crq = crq;
-        feedback.drq = dtq;
+        feedback.crq_length = crq;
+        feedback.drq_length = dtq;
         // process the mini slots
         for(int i = 0; i < DQN_FB_LENGTH; i++){
             uint8_t result = 0;
@@ -153,11 +153,11 @@ int main (int argc, const char* argv[] ){
         }
 
         // send the feedback
-        if(!rf95.send(&feedback, sizeof(feedback))){
+        if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
         } else{
             print("sent feedback with status %b\tcrq: %d\tdtq:%d", 
-                    feedback.slots[0], feedback.crq, feedback.dtq);
+                    feedback.slots[0], feedback.crq_length, feedback.dtq_length);
         }
 
         // defuce the queue length
@@ -167,32 +167,7 @@ int main (int argc, const char* argv[] ){
 
         // now receive data for N slots
 
-        /* Begin Driver Only code */
-        if (rf95.available())
-        {
-            // Should be a message for us now
-            uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-            uint8_t len = sizeof(buf);
-            if (rf95.recv(buf, &len))
-            {
-                uint32_t a, b;
-
-                char echo[RH_RF95_MAX_MESSAGE_LEN] = "";
-                int8_t rssi = rf95.lastRssi();
-                printf("echoing data [%d dBm]: ", rssi);
-                printf("%s\n",(char*)buf);
-
-                strcat(echo, "echo: ");
-                strcat(echo, (char*)buf);
-                rf95.send((uint8_t*)echo, len+6);
-                rf95.waitPacketSent();
-            }
-            else
-            {
-                printf("recv failed");
-            }
-        }
-        
+                
         if (flag)
         {
             printf("\n---CTRL-C Caught - Exiting---\n");

@@ -8,8 +8,8 @@
 #define DQN_FB_LENGTH DQN_M * 2 / 8
 
 // device only
-#define DQN_SYNC 0
-#define DQN_IDLE 1
+// 0 if for idle defined before
+#define DQN_SYNC 1
 #define DQN_TRAN 2
 #define DQN_CRQ  3
 #define DQN_DTQ  4

@@ -153,6 +153,9 @@ int main (int argc, const char* argv[] ){
             feedback.slots[i] = result;
         }
 
+        // handle crc
+        feedback.crc = 0;
+        feedback.crc = get_crc8((char*)&feedback, sizeof(feedback));
         // send the feedback
         a = micros();
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){

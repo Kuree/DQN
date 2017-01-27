@@ -82,9 +82,5 @@ void send_data(char* data);
 // may not be used
 int receive_data(char* buffer);
 
-// used to get feedback from the base station
-// can be used to synchronize the clock
-void get_feedback(struct feedback *fb);
-
 uint8_t get_crc8(char *data, int len);
 #endif

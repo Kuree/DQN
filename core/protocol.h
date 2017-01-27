@@ -15,6 +15,8 @@
 #define DQN_DTQ  4
 #define DQN_REQ  5
 
+#define DQN_MAX_PACKET 1875 // 0.4s frame with 37.5 kbps
+
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 #include <stdint.h>

@@ -8,10 +8,11 @@
 
 #define RF95_FREQ 915.0
 
-#define VBATPIN A7
+#define VBATPIN A7  
 
 // function prototypes
 void sync_time();
+void device_sleep(uint32_t time);
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -21,6 +22,10 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95
 int device_state = DQN_SYNC;
 // used to calculate the time
 uint32_t OFFSET;
+
+// this is the message to send
+// TODO: added fragmentation
+char transmission_data[DQN_MAX_PACKET];
 
 void setup() {
     pinMode(13, OUTPUT);
@@ -68,6 +73,22 @@ void loop() {
             sync_time();
             break;
         }
+        case DQN_IDLE: { // TODO: make it into a library
+            uint32_t sleep_time = random(1000, 10000); // sleep for random 1-10s
+            Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
+            device_sleep(sleep_time);
+            // populate the mock data;
+            for(int i = 0; i < DQN_MAX_PACKET; i++){
+                transmission_data[i] = i % 256; // wrapper around            
+            }
+            Serial.println("device switch to transmission mode");
+            device_state = DQN_TRAN;
+            break;
+        }
+        case DQN_TRAN: {
+            // need to sleep till the TR frame
+            break;
+        }
         default:
             break;
     }
@@ -99,4 +120,12 @@ void sync_time(){
             Serial.println("ERR: recv failed");
         }
     }
+}
+
+void device_sleep(uint32_t time){
+    // put radio into sleep
+    rf95.sleep();
+    // switch to more energy efficient way to do this
+    delay(time);
+    rf95.setMode(RHGenericDriver::RHModeIdle);
 }

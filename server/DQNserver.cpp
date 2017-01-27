@@ -86,6 +86,7 @@ int main (int argc, const char* argv[] ){
 
     // set the preamble
     rf95.setPreambleLength(DQN_PREAMBLE);
+    printf("rf95 set preamble to %d\n", DQN_PREAMBLE);
 
     rf95.setTxPower(23, false);
 
@@ -146,14 +147,14 @@ int main (int argc, const char* argv[] ){
         feedback.dtq_length = dtq;
         // process the mini slots
         for(int i = 0; i < DQN_M; i++){
-            uint8_t result = 0;
-            for(int j = 0; j < 4; j++){
-                // each status only needs 2 bits
-                uint8_t status = tr_results[j + i * 4];
-                // adding crq and dtq accordingly
-                result |= status << (3 - j); // lower address to high address
-            }
-            feedback.slots[i] = result;
+            //uint8_t result = 0;
+            //for(int j = 0; j < 4; j++){
+            //    // each status only needs 2 bits
+            //    uint8_t status = tr_results[j + i * 4];
+            //    // adding crq and dtq accordingly
+            //    result |= status << (3 - j); // lower address to high address
+            //}
+            feedback.slots[i] = tr_results[i];
         }
 
         // handle crc

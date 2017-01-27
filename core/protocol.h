@@ -5,7 +5,7 @@
 #define DQN_IDLE 0
 #define DQN_SUCCESS 1
 #define DQN_CONTEND 2
-#define DQN_PREAMBLE 1
+#define DQN_PREAMBLE 5
 
 // device only
 // 0 if for idle defined before

@@ -56,7 +56,10 @@ void setup() {
         Serial.println("rf95 configuration failed.");
         while (1);
     }
-
+    
+    // setup the preamble
+    rf95.setPreambleLength(DQN_PREAMBLE);
+    Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
 }
 
 void loop() {
@@ -79,11 +82,11 @@ void sync_time(){
     {
         if (rf95.recv(buf, &len))
         {
-            Serial.print("get a packet\n");
+            Serial.print("get a packet with size "); Serial.print(len); Serial.println(" bytes");
 
             struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
             uint8_t crc = feedback->crc;
-            uint8_t packet_crc = get_crc8((char*)feedback, sizeof(struct dqn_feedback));
+            uint8_t packet_crc = get_crc8((char*)feedback, len);
             if(crc == packet_crc){
                 // we got a feedback packet!!!!
                 OFFSET = millis();

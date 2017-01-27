@@ -13,6 +13,8 @@
 // function prototypes
 void sync_time();
 void device_sleep(uint32_t time);
+void send_packet();
+
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -24,8 +26,9 @@ int device_state = DQN_SYNC;
 uint32_t OFFSET;
 
 // this is the message to send
-// TODO: added fragmentation
 char transmission_data[DQN_MAX_PACKET];
+uint32_t packet_size;
+
 
 void setup() {
     pinMode(13, OUTPUT);
@@ -61,7 +64,7 @@ void setup() {
         Serial.println("rf95 configuration failed.");
         while (1);
     }
-    
+
     // setup the preamble
     rf95.setPreambleLength(DQN_PREAMBLE);
     Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
@@ -69,28 +72,66 @@ void setup() {
 
 void loop() {
     switch(device_state){
-        case DQN_SYNC: {
-            sync_time();
-            break;
-        }
-        case DQN_IDLE: { // TODO: make it into a library
-            uint32_t sleep_time = random(1000, 10000); // sleep for random 1-10s
-            Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
-            device_sleep(sleep_time);
-            // populate the mock data;
-            for(int i = 0; i < DQN_MAX_PACKET; i++){
-                transmission_data[i] = i % 256; // wrapper around            
+        case DQN_SYNC: 
+            {
+                sync_time();
+                break;
             }
-            Serial.println("device switch to transmission mode");
-            device_state = DQN_TRAN;
-            break;
-        }
-        case DQN_TRAN: {
-            // need to sleep till the TR frame
-            break;
-        }
+
+        case DQN_IDLE:  // TODO: make it into a library
+            {
+                uint32_t sleep_time = random(1000, 10000); // sleep for random 1-10s
+                Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
+                device_sleep(sleep_time);
+                packet_size = random(DQN_MTU, (DQN_N - 1) * DQN_MTU);
+                Serial.print("sending packet size "); Serial.print(packet_size); Serial.println(" bytes");
+                // populate the mock data;
+                for(int i = 0; i < packet_size; i++){
+                    transmission_data[i] = i % 256; // wrapper around            
+                }
+                Serial.println("device switched to transmission mode");
+                device_state = DQN_TRAN;
+                break;
+            }
+        case DQN_TRAN: 
+            {
+                // need to sleep till the TR frame
+                // send the packet
+                send_packet();
+                break;
+            }
         default:
             break;
+    }
+}
+
+void send_packet(){
+    int num_of_packet = packet_size / DQN_MTU + 1;
+    bool has_sent = false;
+    while(!has_sent){ // loop till you send the packet
+        switch(device_state) {
+            case DQN_TRAN: 
+                // calibrate the time
+                {
+                    break;
+                }
+            case DQN_CRQ:
+                {
+                    break;
+                }
+            case DQN_DTQ:
+                {
+                    has_sent = true;
+                    break;
+                }
+            default:
+                // something went wrong
+                {
+                    Serial.println("device is in a corrupted state");
+                    has_sent = true;
+                    break;
+                }
+        }
     }
 }
 

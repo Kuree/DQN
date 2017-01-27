@@ -15,7 +15,8 @@
 #define DQN_DTQ  4
 #define DQN_REQ  5
 
-#define DQN_MAX_PACKET 1875 // 0.4s frame with 37.5 kbps
+#define DQN_MTU 1875 // 0.4s frame with 37.5 kbps
+#define DQN_MAX_PACKET DQN_MTU * DQN_N
 
 #ifndef PROTOCOL_H
 #define PROTOCOL_H

@@ -7,6 +7,14 @@
 #define DQN_CONTEND 2
 #define DQN_FB_LENGTH DQN_M * 2 / 8
 
+// device only
+#define DQN_SYNC 0
+#define DQN_IDLE 1
+#define DQN_TRAN 2
+#define DQN_CRQ  3
+#define DQN_DTQ  4
+#define DQN_REQ  5
+
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 #include <stdint.h>
@@ -41,6 +49,7 @@ struct  dqn_feedback{
     // uint64_t        result; // this is bloom filter result
     uint8_t         slots[DQN_FB_LENGTH];
     // TODO: add crc in feedback
+    uint8_t         crc;
 } __attribute__((packed));  // total is 12 bytes
 
 

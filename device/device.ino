@@ -10,9 +10,17 @@
 
 #define VBATPIN A7
 
+// function prototypes
+void sync_time();
+
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
 
+// when the device is turned on, we need to synchronize the
+// clock time
+int device_state = DQN_SYNC;
+// used to calculate the time
+uint32_t OFFSET;
 
 void setup() {
     pinMode(13, OUTPUT);
@@ -52,6 +60,40 @@ void setup() {
 }
 
 void loop() {
-
+    switch(device_state){
+        case DQN_SYNC: {
+            sync_time();
+            break;
+        }
+        default:
+            break;
+    }
 }
 
+void sync_time(){
+    uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+    uint8_t len = sizeof(buf);
+    // wait for a feedback
+    // and use the rssi to calibrate the actual time
+    if (rf95.available())
+    {
+        if (rf95.recv(buf, &len))
+        {
+            Serial.print("get a packet\n");
+
+            struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
+            uint8_t crc = feedback->crc;
+            uint8_t packet_crc = get_crc8((char*)feedback, sizeof(struct dqn_feedback));
+            if(crc == packet_crc){
+                // we got a feedback packet!!!!
+                OFFSET = millis();
+                Serial.print("offset set to ");
+                Serial.print(OFFSET);
+                Serial.print("\n");
+                device_state = DQN_IDLE;
+            }
+        } else{
+            Serial.println("ERR: recv failed");
+        }
+    }
+}

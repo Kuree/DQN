@@ -84,6 +84,9 @@ int main (int argc, const char* argv[] ){
         exit(-97);
     }
 
+    // set the preamble
+    rf95.setPreambleLength(DQN_PREAMBLE);
+
     rf95.setTxPower(23, false);
 
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -142,7 +145,7 @@ int main (int argc, const char* argv[] ){
         feedback.crq_length = crq;
         feedback.dtq_length = dtq;
         // process the mini slots
-        for(int i = 0; i < DQN_FB_LENGTH; i++){
+        for(int i = 0; i < DQN_M; i++){
             uint8_t result = 0;
             for(int j = 0; j < 4; j++){
                 // each status only needs 2 bits

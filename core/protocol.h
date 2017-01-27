@@ -5,7 +5,7 @@
 #define DQN_IDLE 0
 #define DQN_SUCCESS 1
 #define DQN_CONTEND 2
-#define DQN_FB_LENGTH DQN_M * 2 / 8
+#define DQN_PREAMBLE 1
 
 // device only
 // 0 if for idle defined before
@@ -47,10 +47,10 @@ struct  dqn_feedback{
     // 8 bytes
     // NOT USED
     // uint64_t        result; // this is bloom filter result
-    uint8_t         slots[DQN_FB_LENGTH];
+    uint8_t         slots[DQN_M];
     // TODO: add crc in feedback
     uint8_t         crc;
-} __attribute__((packed));  // total is 12 bytes
+} __attribute__((packed));  // total is 5 + FB bytes
 
 
 /* Bloom filter usage in feedback slot

@@ -91,5 +91,9 @@ void send_data(char* data);
 // may not be used
 int receive_data(char* buffer);
 
+// compute crc8
 uint8_t get_crc8(char *data, int len);
+
+// returns in milli seconds
+uint32_t get_transmission_time(int8_t rssi);
 #endif

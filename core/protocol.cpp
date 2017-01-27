@@ -1,4 +1,5 @@
 #define BLOOM_SIZE 64
+#include <math.h>
 #include "protocol.h"
 
 // CRC8 implementation is adapted from 
@@ -63,4 +64,14 @@ uint8_t get_crc8(char *data, int len){
         crc &= 0xFF;
     }
     return crc;
+}
+
+uint32_t get_transmission_time(int8_t rssi){
+    // quick formula from http://electronics.stackexchange.com/a/83356
+    // assume it's free space
+    int a = 0; // TODO: calibrate this value
+    double raw = (rssi - a) / (-10);
+    double distance = pow(10, raw);
+    double time = distance / 299792458 * 1000;
+    return (uint32_t)time;
 }

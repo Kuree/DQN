@@ -146,7 +146,7 @@ void send_packet(){
 }
 
 void wait_to_send(){
-    uint32_t total_cycle = (1 + DQN_N) * DQN_LENGTH; // TODO: fixed the cycle thing
+    uint32_t total_cycle = (2 + DQN_N) * DQN_LENGTH; // TODO: fixed the cycle thing
     uint32_t passed_time = (millis() - OFFSET) % total_cycle;
     uint32_t sleep_time = total_cycle - passed_time;
     Serial.print("device sleeps for "); Serial.print(sleep_time); Serial.println(" ms");
@@ -157,7 +157,7 @@ void send_tr(){
     // TODO: use RSSI to determine the transmission rate
     uint32_t frame_start_time = millis();
     int slot_number = random(0, DQN_M);
-    uint32_t sleep_time = slot_number * DQN_MINI_SLOT_LENGTH / DQN_M;
+    uint32_t sleep_time = slot_number * DQN_LENGTH / DQN_M;
     Serial.print("device choose mini-slot "); Serial.print(slot_number); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
     device_sleep(sleep_time);
@@ -177,7 +177,8 @@ void send_tr(){
     }
 
     // wait for TR TODO: fix this sleep
-    while(millis() < frame_start_time + DQN_MINI_SLOT_LENGTH);
+    while(millis() < frame_start_time + DQN_LENGTH){
+    }
 
     // test feedback receive
     Serial.println("tring to receive feedback time");
@@ -185,12 +186,13 @@ void send_tr(){
 }
 
 void sync_time(){
+    Serial.println("start to sync time");
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     const uint32_t START_TIME = millis();
     // wait for a feedback
     // and use the rssi to calibrate the actual time
-    while(millis() < START_TIME + DQN_LENGTH - DQN_MINI_SLOT_LENGTH){
+    while(millis() < START_TIME + DQN_LENGTH){ // TODO: fix this time
         if (rf95.available())
         {
             if (rf95.recv(buf, &len))
@@ -217,8 +219,8 @@ void sync_time(){
 
 void device_sleep(uint32_t time){
     // put radio into sleep
-    rf95.sleep();
+    //rf95.sleep();
     // switch to more energy efficient way to do this
     delay(time);
-    rf95.setMode(RHGenericDriver::RHModeIdle);
+    //rf95.setMode(RHGenericDriver::RHModeIdle);
 }

@@ -99,7 +99,7 @@ int main (int argc, const char* argv[] ){
 
     // parameters used by DQN
     const uint32_t OFFSET_TIME = millis();
-    const uint32_t MINI_SLOT_TIME = DQN_MINI_SLOT_LENGTH / DQN_M;
+    const uint32_t MINI_SLOT_TIME = DQN_LENGTH / DQN_M;
     uint16_t crq = 0;
     uint16_t dtq = 0;
 
@@ -122,7 +122,7 @@ int main (int argc, const char* argv[] ){
         // wait for mini slot requests
         // TODO: need to adjust this time based on how fast
         // the packet can transmit
-        while(millis() < CYCLE_START_TIME + DQN_MINI_SLOT_LENGTH){
+        while(millis() < CYCLE_START_TIME + DQN_LENGTH){
             if(rf95.available()){
                 printf("got a TR packet\n");
                 uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -185,9 +185,9 @@ int main (int argc, const char* argv[] ){
 
         // moved to the receive window
         // DQN_LENGTH ms for overhead 
-        delay(DQN_LENGTH - (millis() - CYCLE_START_TIME));
+        delay(DQN_LENGTH * 2 - (millis() - CYCLE_START_TIME));
 
-        while(millis() < CYCLE_START_TIME + DQN_LENGTH * (DQN_N + 1)){
+        while(millis() < CYCLE_START_TIME + DQN_LENGTH * (DQN_N + 2)){
             // TODO: add channel hopping
             if(rf95.available()){
                 // TODO: assemble the fragment together and return to the library user
@@ -195,9 +195,9 @@ int main (int argc, const char* argv[] ){
                 uint8_t len = sizeof(buf);
                 if (rf95.recv(buf, &len))
                 {
-                    printf("receiving data...");
+                    printf("receiving data...\n");
                 } else{
-                    printf("receiving failed");
+                    printf("receiving failed\n");
                 }
             }
         }

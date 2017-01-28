@@ -20,6 +20,8 @@ void wait_data_slot();
 void wait_to_send();
 void send_tr();
 void handle_feedback(struct dqn_feedback *feedback);
+void dtq_send();
+void crq_wait();
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -32,7 +34,7 @@ uint32_t OFFSET;
 uint32_t FEEDBACK_TIME;
 
 // this is the message to send
-char transmission_data[DQN_MAX_PACKET];
+uint8_t transmission_data[DQN_MAX_PACKET];
 uint32_t packet_size;
 int chosen_slot;
 uint32_t queue_sleep_time;
@@ -94,7 +96,7 @@ void loop() {
                 uint32_t sleep_time = random(1000, 5000); // sleep for random 1-5s
                 Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
                 device_sleep(sleep_time);
-                packet_size = random(DQN_MTU, DQN_N * DQN_MTU);
+                packet_size = random(DQN_MTU, (DQN_N - 1) * DQN_MTU);
                 Serial.print("sending packet size "); Serial.print(packet_size); Serial.println(" bytes");
                 // populate the mock data;
                 for(int i = 0; i < packet_size; i++){
@@ -128,23 +130,81 @@ void send_packet(){
                 }
             case DQN_CRQ:
                 {
+                    crq_wait();
                     break;
                 }
             case DQN_DTQ:
                 {
+                    dtq_send();
                     has_sent = true;
                     break;
                 }
             default:
                 // something went wrong
                 {
-                    Serial.println("device is in a corrupted state");
-                    has_sent = true;
+                    Serial.println("device is in a corrupted state. trying to resend...");
+                    device_state = DQN_TRAN;
                     break;
                 }
         }
     }
 }
+
+void dtq_send(){
+    // we need to compute how many frames we need to skip
+    // it can be very messy...
+    // first align the device to the first data from
+    uint32_t sleep_time = OFFSET + 2 * DQN_LENGTH - millis(); // TODO: fix time here
+    device_sleep(sleep_time);
+    // TODO: optimize this
+    bool has_sent = false;
+    int counter = 0;
+    int num_packets = packet_size / DQN_MTU + 1;
+    while(!has_sent){
+        if(queue_sleep_time){
+            queue_sleep_time--;
+            counter++;
+            device_sleep(DQN_LENGTH);
+            if(counter == DQN_N) { // overhead block
+                device_sleep(2 * DQN_LENGTH);
+                counter = 0;
+            }
+        } else { // need to transmit
+            for(int i = 0; i < num_packets; i++){
+                uint32_t size = (i != num_packets - 1)? DQN_LENGTH: packet_size % DQN_LENGTH;
+                if(!rf95.send(transmission_data + DQN_MTU * i, size)){
+                    Serial.println("sending data");
+                    device_state = DQN_IDLE; // reset the device state if failed
+                } else {
+                    Serial.print("packet fragment"); Serial.print(i); Serial.println(" sent");
+                }
+                counter++;
+                if(counter == DQN_N){
+                    device_sleep(2 * DQN_LENGTH);
+                    counter = 0;
+                }
+            }
+        }
+    }
+}
+
+void crq_wait(){
+    // since the OFFSET is set to the beginning of every current frame
+    // we need to sleep through to the next frame. then compute how many time to sleep
+    // notice that for crq, queue_sleep_time is for entire frames
+    // TODO: test this
+    // TODO: fix the time frame
+    uint32_t sleep_time = (queue_sleep_time) * (2 + DQN_N) * DQN_LENGTH; // sleep time after the next frame
+    queue_sleep_time = 0; // reset the queue sleep_time
+    //uint32_t sleep_current_frame = (DQN_N + 2) * DQN_LENGTH + OFFSET - millis();
+    // we don't need to calibrate to the beginning of the frame for two reasons
+    //  1. use sleep_time will set the device to middle of the frame before
+    //  2. once the device is swtiched to transmission state, wait_send_send() will set the device
+    //      to current frame
+    device_sleep(sleep_time);
+    device_state = DQN_TRAN;
+}
+
 
 void wait_to_send(){
     uint32_t total_cycle = (2 + DQN_N) * DQN_LENGTH; // TODO: fixed the cycle thing
@@ -178,10 +238,10 @@ void send_tr(){
     }
 
     // wait for TR TODO: fix this sleep
-    while(millis() < frame_start_time + DQN_LENGTH){
-    }
+    //while(millis() < frame_start_time + DQN_LENGTH){
+    //}
 
-    // test feedback receive
+    // feedback receive
     Serial.println("tring to receive feedback time");
     sync_time();
 }
@@ -202,6 +262,7 @@ void sync_time(){
 
                 struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
                 uint8_t crc = feedback->crc;
+                feedback->crc = 0;
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!

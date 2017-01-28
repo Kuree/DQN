@@ -26,6 +26,8 @@ const uint32_t TR_TIME = (DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_OH_
 //Function Definitions
 void sig_handler(int sig);
 void print_feedback(struct dqn_feedback fb);
+void print_packet(uint8_t *data, int length);
+
 
 // pin numers use wiringPi numbers.
 #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
@@ -132,7 +134,7 @@ int main (int argc, const char* argv[] ){
                     struct dqn_tr* tr = (struct dqn_tr *)buf;
                     uint8_t crc = tr->crc;
                     tr->crc = 0;
-                    uint8_t packet_crc = get_crc8((char*)tr, 3); // only 3 bytes need to calculate
+                    uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr)); // only 3 bytes need to calculate
                     // calculate the slot number
                     uint16_t time_offset = millis() - CYCLE_START_TIME - TR_TIME;
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
@@ -141,6 +143,7 @@ int main (int argc, const char* argv[] ){
                         tr_results[mini_slot] = tr->num_slots;
                         new_dtq += tr->num_slots;
                     } else{
+                        printf("actual requested: %d\n", tr->num_slots);
                         tr_results[mini_slot] = DQN_N;
                         new_crq += 1;
                     }
@@ -197,6 +200,7 @@ int main (int argc, const char* argv[] ){
                 if (rf95.recv(buf, &len))
                 {
                     printf("receiving data... size %d\n", len);
+                    print_packet(buf, len);
                 } else{
                     printf("receiving failed\n");
                 }
@@ -229,3 +233,11 @@ void print_feedback(struct dqn_feedback fb){
     printf("\n CRQ: %d\tDTQ: %d\n", fb.crq_length, fb.dtq_length);
 }
 
+void print_packet(uint8_t *data, int length){
+    for(int i = 0; i < length; i++){
+        printf("%X ", data[i]);
+        if(i && i % 16 == 0)
+            printf("\n");
+    }
+    printf("\n");
+}

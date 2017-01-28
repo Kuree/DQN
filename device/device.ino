@@ -137,6 +137,7 @@ void send_packet(){
                 {
                     dtq_send();
                     has_sent = true;
+                    device_state = DQN_IDLE;
                     break;
                 }
             default:
@@ -171,12 +172,12 @@ void dtq_send(){
             }
         } else { // need to transmit
             for(int i = 0; i < num_packets; i++){
-                uint32_t size = (i != num_packets - 1)? DQN_LENGTH: packet_size % DQN_LENGTH;
+                uint32_t size = (i != (num_packets - 1))? DQN_MTU: packet_size % DQN_MTU;
                 if(!rf95.send(transmission_data + DQN_MTU * i, size)){
                     Serial.println("sending data");
                     device_state = DQN_IDLE; // reset the device state if failed
                 } else {
-                    Serial.print("packet fragment"); Serial.print(i); Serial.println(" sent");
+                    Serial.print("packet fragment "); Serial.print(i); Serial.println(" sent");
                 }
                 counter++;
                 if(counter == DQN_N){
@@ -184,6 +185,7 @@ void dtq_send(){
                     counter = 0;
                 }
             }
+            has_sent = true;
         }
     }
 }

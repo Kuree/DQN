@@ -18,6 +18,11 @@
 
 #include "../core/protocol.h"
 
+// DQN related constants
+const uint32_t FEEDBACK_TIME = (DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_OH_RATE;
+const uint32_t TR_TIME = (DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_OH_RATE;
+
+
 //Function Definitions
 void sig_handler(int sig);
 
@@ -100,6 +105,7 @@ int main (int argc, const char* argv[] ){
 
     while (true){
         const uint32_t CYCLE_START_TIME = millis();
+        printf("cycle started at %d\n", CYCLE_START_TIME);
         uint8_t len = sizeof(buf);
         uint8_t from, to, id, flags;
         uint16_t new_crq = crq;
@@ -118,6 +124,7 @@ int main (int argc, const char* argv[] ){
         // the packet can transmit
         while(millis() < CYCLE_START_TIME + DQN_MINI_SLOT_LENGTH){
             if(rf95.available()){
+                printf("got a TR packet\n");
                 uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
                 uint8_t len = sizeof(buf);
                 if (rf95.recv(buf, &len)){
@@ -126,7 +133,7 @@ int main (int argc, const char* argv[] ){
                     tr->crc = 0;
                     uint8_t packet_crc = get_crc8((char*)tr, 3); // only 3 bytes need to calculate
                     // calculate the slot number
-                    uint16_t time_offset = millis() - CYCLE_START_TIME;
+                    uint16_t time_offset = millis() - CYCLE_START_TIME - TR_TIME;
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
                     // set the status of the mini slot 
                     if(packet_crc == crc){
@@ -154,6 +161,7 @@ int main (int argc, const char* argv[] ){
             //    // adding crq and dtq accordingly
             //    result |= status << (3 - j); // lower address to high address
             //}
+            // TODO: compress the space
             feedback.slots[i] = tr_results[i];
         }
 

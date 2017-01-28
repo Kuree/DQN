@@ -25,6 +25,7 @@ const uint32_t TR_TIME = (DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_OH_
 
 //Function Definitions
 void sig_handler(int sig);
+void print_feedback(struct dqn_feedback fb);
 
 // pin numers use wiringPi numbers.
 #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
@@ -137,10 +138,10 @@ int main (int argc, const char* argv[] ){
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
                     // set the status of the mini slot 
                     if(packet_crc == crc){
-                        tr_results[mini_slot] = DQN_SUCCESS;
+                        tr_results[mini_slot] = tr->num_slots;
                         new_dtq += tr->num_slots;
                     } else{
-                        tr_results[mini_slot] = DQN_CONTEND;
+                        tr_results[mini_slot] = DQN_N;
                         new_crq += 1;
                     }
                 }
@@ -174,8 +175,8 @@ int main (int argc, const char* argv[] ){
             printf("sending feedback failed");
         } else{
             b = micros();
-            printf("sent feedback with status %X\tcrq: %d\tdtq:%d\ttook %dus to send %d bytes\n", 
-                    feedback.slots[0], feedback.crq_length, feedback.dtq_length, b-a, sizeof(feedback));
+            print_feedback(feedback);
+            printf("sent feedback took %dus to send %d bytes\n", b-a, sizeof(feedback));
         }
 
         // reduce the queue length
@@ -195,7 +196,7 @@ int main (int argc, const char* argv[] ){
                 uint8_t len = sizeof(buf);
                 if (rf95.recv(buf, &len))
                 {
-                    printf("receiving data...\n");
+                    printf("receiving data... size %d\n", len);
                 } else{
                     printf("receiving failed\n");
                 }
@@ -219,5 +220,12 @@ void sig_handler(int sig)
         exit(-99);
     }
     flag=1;
+}
+
+void print_feedback(struct dqn_feedback fb){
+    for(int i = 0; i < DQN_M; i++){
+        printf("[%d]: %d\t", i, fb.slots[i]);
+    }
+    printf("\n CRQ: %d\tDTQ: %d\n", fb.crq_length, fb.dtq_length);
 }
 

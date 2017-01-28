@@ -19,7 +19,7 @@ void send_packet();
 void wait_data_slot();
 void wait_to_send();
 void send_tr();
-
+void handle_feedback(struct dqn_feedback *feedback);
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -34,7 +34,8 @@ uint32_t FEEDBACK_TIME;
 // this is the message to send
 char transmission_data[DQN_MAX_PACKET];
 uint32_t packet_size;
-
+int chosen_slot;
+uint32_t queue_sleep_time;
 
 void setup() {
     pinMode(13, OUTPUT);
@@ -90,7 +91,7 @@ void loop() {
 
         case DQN_IDLE:  // TODO: make it into a library
             {
-                uint32_t sleep_time = random(1000, 10000); // sleep for random 1-10s
+                uint32_t sleep_time = random(1000, 5000); // sleep for random 1-5s
                 Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
                 device_sleep(sleep_time);
                 packet_size = random(DQN_MTU, DQN_N * DQN_MTU);
@@ -156,9 +157,9 @@ void wait_to_send(){
 void send_tr(){
     // TODO: use RSSI to determine the transmission rate
     uint32_t frame_start_time = millis();
-    int slot_number = random(0, DQN_M);
-    uint32_t sleep_time = slot_number * DQN_LENGTH / DQN_M;
-    Serial.print("device choose mini-slot "); Serial.print(slot_number); 
+    chosen_slot = random(0, DQN_M);
+    uint32_t sleep_time = chosen_slot * DQN_LENGTH / DQN_M;
+    Serial.print("device choose mini-slot "); Serial.print(chosen_slot); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
     device_sleep(sleep_time);
     struct dqn_tr tr;
@@ -168,7 +169,7 @@ void send_tr(){
     // calculate crc
     tr.crc = 0;
     tr.crc = get_crc8((char*)&tr, sizeof(tr));
-    
+
     if(!rf95.send((uint8_t *)&tr, sizeof(tr))){
         Serial.println("sending TR failed");
         device_state = DQN_IDLE; // reset the device state if failed
@@ -186,7 +187,7 @@ void send_tr(){
 }
 
 void sync_time(){
-    Serial.println("start to sync time");
+    Serial.println("start to sync/receive feedback");
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     const uint32_t START_TIME = millis();
@@ -204,16 +205,59 @@ void sync_time(){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = millis() - FEEDBACK_TIME;
+                    OFFSET = millis() - FEEDBACK_TIME - DQN_LENGTH; // TODO: fix the time
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");
-                    device_state = DQN_IDLE;
+                    // if the device just started up
+                    // changed to idle
+                    // if in transmission, need to check if we've requested successfully
+                    if(device_state == DQN_SYNC){
+                        device_state = DQN_IDLE;
+                    } else if(device_state == DQN_TRAN) {
+                        Serial.println("computing queue...");
+                        handle_feedback(feedback);
+                    }
+                } else{
+                    if(device_state == DQN_TRAN){
+                        Serial.println("no feedback received...");
+                    }
                 }
             } else{
                 Serial.println("ERR: recv failed");
             }
         }
+    }
+}
+
+void handle_feedback(struct dqn_feedback* feedback){
+    uint8_t status = feedback->slots[chosen_slot];
+    int num_slots = packet_size / DQN_MTU + 1;
+    if(status == DQN_N) { // this is a contended slot
+        // devie enter CRQ
+        uint32_t crq = feedback->crq_length;
+        for(int i = 0; i < chosen_slot; i++){
+            if(feedback->slots[i] == DQN_N)
+                crq += 1;
+        }
+        Serial.print("device enter CRQ in "); Serial.print(crq); Serial.println();
+        queue_sleep_time = crq;
+        device_state = DQN_CRQ;
+    } else if(status == num_slots){
+        // device enter DTQ
+        uint32_t dtq = feedback->dtq_length;
+        for(int i = 0; i < chosen_slot; i++){
+            if(feedback->slots[i] != 0 && feedback->slots[i] != DQN_N){
+                dtq += feedback->slots[i];
+            }
+        }
+        Serial.print("device enter DTQ in "); Serial.print(dtq); Serial.println();
+        queue_sleep_time = dtq;
+        device_state = DQN_DTQ;
+    } else {
+        Serial.print("Something went wrong. device choose slot ");
+        Serial.print(chosen_slot); Serial.print("status returned");
+        Serial.print(status); Serial.println();
     }
 }
 

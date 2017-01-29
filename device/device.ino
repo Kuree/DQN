@@ -67,8 +67,8 @@ void setup() {
     // you can set transmitter powers from 5 to 23 dBm:
     rf95.setTxPower(23, false);
 
-    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
-        Serial.println("rf95 configuration set to BW=500 kHz BW, CR=4/5 CR, SF=7.");
+    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
+        Serial.println("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.");
     } else{
         Serial.println("rf95 configuration failed.");
         while (1);

@@ -85,8 +85,8 @@ int main (int argc, const char* argv[] ){
         printf("rf95 set freq to %5.2f.\n", 915.0);
     }
 
-    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
-        printf("rf95 configuration set to BW=500 kHz BW, CR=4/5 CR, SF=7.\n");
+    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
+        printf("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
     }else{
         printf("rf95 configuration failed.\n");
         exit(-97);
@@ -179,8 +179,11 @@ int main (int argc, const char* argv[] ){
         } else{
             b = micros();
             print_feedback(feedback);
-            printf("sent feedback took %dus to send %d bytes\n", b-a, sizeof(feedback));
+            printf("sent feedback took %dus to send %d bytes\n", b-a, DQN_PREAMBLE + sizeof(feedback));
         }
+
+        // change back to high transmission mode
+        //
 
         // reduce the queue length
         dtq = new_dtq > DQN_N? new_dtq - DQN_N: 0;

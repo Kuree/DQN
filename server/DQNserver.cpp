@@ -20,7 +20,7 @@
 
 // DQN related constants
 const uint32_t FEEDBACK_TIME = (DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_OH_RATE;
-const uint32_t TR_TIME = (DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_OH_RATE;
+const uint32_t TR_TIME = (4 + DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_OH_RATE; // take into packet header into account
 
 
 //Function Definitions
@@ -85,7 +85,7 @@ int main (int argc, const char* argv[] ){
         printf("rf95 set freq to %5.2f.\n", 915.0);
     }
 
-    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
+    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
         printf("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
     }else{
         printf("rf95 configuration failed.\n");
@@ -107,26 +107,22 @@ int main (int argc, const char* argv[] ){
     uint16_t dtq = 0;
 
     while (true){
-        const uint32_t CYCLE_START_TIME = millis();
-        printf("cycle started at %d\n", CYCLE_START_TIME);
-        uint8_t len = sizeof(buf);
-        uint8_t from, to, id, flags;
         uint16_t new_crq = crq;
         uint16_t new_dtq = dtq;
-
-        int a, b; // this is used for debug information
 
         // setup TR counter
         uint8_t tr_results[DQN_M];
         for(uint8_t i = 0; i < DQN_M; i++){
-            tr_results[i] = DQN_IDLE;
+            tr_results[i] = 0;
         }
-
+        const uint32_t CYCLE_START_TIME = millis();
+        printf("cycle started at %d\n", CYCLE_START_TIME);
         // wait for mini slot requests
         // TODO: need to adjust this time based on how fast
         // the packet can transmit
         while(millis() < CYCLE_START_TIME + DQN_LENGTH){
             if(rf95.available()){
+                uint32_t received_time = millis();
                 printf("got a TR packet\n");
                 uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
                 uint8_t len = sizeof(buf);
@@ -134,10 +130,11 @@ int main (int argc, const char* argv[] ){
                     struct dqn_tr* tr = (struct dqn_tr *)buf;
                     uint8_t crc = tr->crc;
                     tr->crc = 0;
-                    uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr)); // only 3 bytes need to calculate
+                    uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
                     // calculate the slot number
-                    uint16_t time_offset = millis() - CYCLE_START_TIME - TR_TIME;
+                    uint16_t time_offset = received_time - CYCLE_START_TIME - TR_TIME - DQN_RECV_WINDOW;
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
+                    printf("requested mini slot %d offset %d", mini_slot, time_offset % MINI_SLOT_TIME);
                     // set the status of the mini slot 
                     if(packet_crc == crc){
                         tr_results[mini_slot] = tr->num_slots;
@@ -173,13 +170,11 @@ int main (int argc, const char* argv[] ){
         feedback.crc = 0;
         feedback.crc = get_crc8((char*)&feedback, sizeof(feedback));
         // send the feedback
-        a = micros();
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
         } else{
-            b = micros();
+            printf("sent feedback...\n");
             print_feedback(feedback);
-            printf("sent feedback took %dus to send %d bytes\n", b-a, DQN_PREAMBLE + sizeof(feedback));
         }
 
         // change back to high transmission mode
@@ -237,6 +232,8 @@ void print_feedback(struct dqn_feedback fb){
 }
 
 void print_packet(uint8_t *data, int length){
+    //const int PRINT_SIZE = 32;
+    //length = length > PRINT_SIZE? PRINT_SIZE:length;
     for(int i = 0; i < length; i++){
         printf("%X ", data[i]);
         if(i && i % 16 == 0)

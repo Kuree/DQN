@@ -2,14 +2,13 @@
 #define DQN_N 8
 #define DQN_LENGTH 400
 #define DQN_MINI_SLOT_LENGTH 200
-#define DQN_IDLE 0
-#define DQN_SUCCESS 1
-#define DQN_CONTEND 2
 #define DQN_PREAMBLE 8
 #define DQN_OH_RATE 37500 // TODO: fixed this rate
 
+#define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program
+#define DQN_GUARD 2 // 2ms guard time
 // device only
-// 0 if for idle defined before
+#define DQN_IDLE 0
 #define DQN_SYNC 1
 #define DQN_TRAN 2
 #define DQN_CRQ  3

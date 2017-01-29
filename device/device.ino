@@ -22,6 +22,7 @@ void send_tr();
 void handle_feedback(struct dqn_feedback *feedback);
 void dtq_send();
 void crq_wait();
+void send_fragment(uint8_t *data, int size, int mtu);
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -67,7 +68,7 @@ void setup() {
     // you can set transmitter powers from 5 to 23 dBm:
     rf95.setTxPower(23, false);
 
-    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
+    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
         Serial.println("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.");
     } else{
         Serial.println("rf95 configuration failed.");
@@ -79,7 +80,7 @@ void setup() {
     Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
 
     // compute the feedback time
-    FEEDBACK_TIME = (DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_OH_RATE; // compute in millis second
+    FEEDBACK_TIME = (4 + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_OH_RATE; // compute in millis second
     Serial.print("feedback packet transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
 }
 
@@ -151,6 +152,20 @@ void send_packet(){
     }
 }
 
+
+void send_fragment(uint8_t *data, int total_size, int mtu){
+    int num_packets = total_size / mtu + 1;
+    for(int i = 0; i < num_packets; i++){
+        uint32_t size = (i != (num_packets - 1))? mtu: total_size % mtu;
+        if(!rf95.send(data + mtu * i, size)){
+            Serial.println("sending data failed");
+            device_state = DQN_IDLE; // reset the device state if failed
+        } else {
+            Serial.print("packet fragment "); Serial.print(i); Serial.println(" sent");
+        }
+    }
+}
+
 void dtq_send(){
     // we need to compute how many frames we need to skip
     // it can be very messy...
@@ -173,12 +188,7 @@ void dtq_send(){
         } else { // need to transmit
             for(int i = 0; i < num_packets; i++){
                 uint32_t size = (i != (num_packets - 1))? DQN_MTU: packet_size % DQN_MTU;
-                if(!rf95.send(transmission_data + DQN_MTU * i, size)){
-                    Serial.println("sending data");
-                    device_state = DQN_IDLE; // reset the device state if failed
-                } else {
-                    Serial.print("packet fragment "); Serial.print(i); Serial.println(" sent");
-                }
+                send_fragment(transmission_data + DQN_MTU * i, size, RH_RF95_MAX_MESSAGE_LEN); 
                 counter++;
                 if(counter == DQN_N){
                     device_sleep(2 * DQN_LENGTH);
@@ -240,8 +250,8 @@ void send_tr(){
     }
 
     // wait for TR TODO: fix this sleep
-    //while(millis() < frame_start_time + DQN_LENGTH){
-    //}
+    while(millis() < frame_start_time + DQN_LENGTH / 2){
+    }
 
     // feedback receive
     Serial.println("tring to receive feedback time");
@@ -268,7 +278,7 @@ void sync_time(){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = millis() - FEEDBACK_TIME - DQN_LENGTH; // TODO: fix the time
+                    OFFSET = millis() - DQN_LENGTH - FEEDBACK_TIME - DQN_GUARD; // TODO: fix the time
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");
@@ -319,7 +329,7 @@ void handle_feedback(struct dqn_feedback* feedback){
         device_state = DQN_DTQ;
     } else {
         Serial.print("Something went wrong. device choose slot ");
-        Serial.print(chosen_slot); Serial.print("status returned");
+        Serial.print(chosen_slot); Serial.print(" status returned");
         Serial.print(status); Serial.println();
     }
 }

@@ -1,9 +1,18 @@
+#ifndef PROTOCOL_H
+#define PROTOCOL_H
+
+// define radio config
+#define LORA_HEADER 4
+
 #define DQN_M 4
 #define DQN_N 8
 #define DQN_LENGTH 400
 #define DQN_MINI_SLOT_LENGTH 200
+#define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH / DQN_LENGTH
 #define DQN_PREAMBLE 8
-#define DQN_OH_RATE 37500 // TODO: fixed this rate
+//#define DQN_RATE 732
+#define DQN_RATE 37500 // TODO: fixed this rate
+
 
 #define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program
 #define DQN_GUARD 2 // 2ms guard time
@@ -15,11 +24,9 @@
 #define DQN_DTQ  4
 #define DQN_REQ  5
 
-#define DQN_MTU 1875 // 0.4s frame with 37.5 kbps
-#define DQN_MAX_PACKET DQN_MTU * DQN_N
+#define DQN_MTU (DQN_RATE * DQN_LENGTH / 8000)
+#define DQN_MAX_PACKET (DQN_MTU * DQN_N)
 
-#ifndef PROTOCOL_H
-#define PROTOCOL_H
 #include <stdint.h>
 #include <stdbool.h>
 

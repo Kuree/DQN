@@ -1,6 +1,6 @@
 #include <SPI.h>
-#include <RH_RF95.h>
 #include <protocol.h>
+#include <RH_RF95.h>
 
 #define DEVICE_ID 1234
 
@@ -80,8 +80,9 @@ void setup() {
     Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
 
     // compute the feedback time
-    FEEDBACK_TIME = (4 + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_OH_RATE; // compute in millis second
+    FEEDBACK_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_RATE; // compute in millis second
     Serial.print("feedback packet transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
+    Serial.print("DQN MTU: ");Serial.print(DQN_MTU);Serial.println();
 }
 
 void loop() {
@@ -162,6 +163,8 @@ void send_fragment(uint8_t *data, int total_size, int mtu){
             device_state = DQN_IDLE; // reset the device state if failed
         } else {
             Serial.print("packet fragment "); Serial.print(i); Serial.println(" sent");
+            Serial.print("Total size: "); Serial.print(total_size); Serial.print(" MTU: ");
+            Serial.println(mtu);
         }
     }
 }
@@ -171,6 +174,7 @@ void dtq_send(){
     // it can be very messy...
     // first align the device to the first data from
     uint32_t sleep_time = OFFSET + 2 * DQN_LENGTH - millis(); // TODO: fix time here
+    Serial.print("device sleep ");Serial.print(sleep_time); Serial.println("before transmission in DTQ");
     device_sleep(sleep_time);
     // TODO: optimize this
     bool has_sent = false;
@@ -187,9 +191,13 @@ void dtq_send(){
             }
         } else { // need to transmit
             for(int i = 0; i < num_packets; i++){
+                uint32_t start = millis();
+                Serial.print("sending packet "); Serial.print(i); Serial.print(" of ");
+                Serial.print(num_packets); Serial.print(". Total size "); Serial.print(packet_size); Serial.println();
                 uint32_t size = (i != (num_packets - 1))? DQN_MTU: packet_size % DQN_MTU;
                 send_fragment(transmission_data + DQN_MTU * i, size, RH_RF95_MAX_MESSAGE_LEN); 
                 counter++;
+                while(millis() < start + DQN_LENGTH); // sleep till next frame
                 if(counter == DQN_N){
                     device_sleep(2 * DQN_LENGTH);
                     counter = 0;
@@ -254,12 +262,10 @@ void send_tr(){
     }
 
     // feedback receive
-    Serial.println("tring to receive feedback time");
     sync_time();
 }
 
 void sync_time(){
-    Serial.println("start to sync/receive feedback");
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     const uint32_t START_TIME = millis();
@@ -270,7 +276,7 @@ void sync_time(){
         {
             if (rf95.recv(buf, &len))
             {
-                Serial.print("get a packet with size "); Serial.print(len); Serial.println(" bytes");
+                uint32_t received_time = millis();
 
                 struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
                 uint8_t crc = feedback->crc;
@@ -278,7 +284,7 @@ void sync_time(){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = millis() - DQN_LENGTH - FEEDBACK_TIME - DQN_GUARD; // TODO: fix the time
+                    OFFSET = received_time - DQN_LENGTH - FEEDBACK_TIME - DQN_GUARD; // TODO: fix the time
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");

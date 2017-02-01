@@ -19,8 +19,8 @@
 #include "../core/protocol.h"
 
 // DQN related constants
-const uint32_t FEEDBACK_TIME = (DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_OH_RATE;
-const uint32_t TR_TIME = (4 + DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_OH_RATE; // take into packet header into account
+const uint32_t FEEDBACK_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_RATE;
+const uint32_t TR_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_RATE; // take into packet header into account
 
 
 //Function Definitions
@@ -38,7 +38,6 @@ void print_packet(uint8_t *data, int length);
 #define TX_PIN 4
 #define RX_PIN 5
 
-static const uint8_t hw_address[] = {0x98,0x76,0xb6,0x5c,0x00,0x00};
 RH_RF95 rf95(RF95_CS_PIN, RF95_INT_PIN);
 
 //Flag for Ctrl-C
@@ -50,7 +49,7 @@ int main (int argc, const char* argv[] ){
 
     wiringPiSetup();
 
-    printf( "\nRasPiRH95 Tester Startup\n\n" );
+    printf( "\nFeedback delay %d ms\n\n", FEEDBACK_TIME);
 
     /* Begin Driver Only Init Code */
     pinMode(RF95_RESET_PIN, OUTPUT);
@@ -132,7 +131,7 @@ int main (int argc, const char* argv[] ){
                     tr->crc = 0;
                     uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
                     // calculate the slot number
-                    uint16_t time_offset = received_time - CYCLE_START_TIME - TR_TIME - DQN_RECV_WINDOW;
+                    uint16_t time_offset = received_time - CYCLE_START_TIME - TR_TIME;
                     uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
                     printf("requested mini slot %d offset %d", mini_slot, time_offset % MINI_SLOT_TIME);
                     // set the status of the mini slot 
@@ -235,8 +234,8 @@ void print_packet(uint8_t *data, int length){
     //const int PRINT_SIZE = 32;
     //length = length > PRINT_SIZE? PRINT_SIZE:length;
     for(int i = 0; i < length; i++){
-        printf("%X ", data[i]);
-        if(i && i % 16 == 0)
+        printf("%02X ", data[i]);
+        if(i % 16 == 15)
             printf("\n");
     }
     printf("\n");

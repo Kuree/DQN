@@ -5,13 +5,14 @@
 #define LORA_HEADER 4
 
 #define DQN_M 4
-#define DQN_N 8
+#define DQN_N 4 // changed to a small number to make debug easier
 #define DQN_LENGTH 400
 #define DQN_MINI_SLOT_LENGTH 200
-#define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH / DQN_LENGTH
+#define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH)
+#define DQN_OVERHEAD (1 + DQN_MINI_SLOT_FRAME / DQN_LENGTH)
 #define DQN_PREAMBLE 8
-//#define DQN_RATE 732
-#define DQN_RATE 37500 // TODO: fixed this rate
+#define DQN_RATE 732
+//#define DQN_RATE 37500 // TODO: fixed this rate
 
 
 #define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program

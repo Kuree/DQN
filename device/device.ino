@@ -68,7 +68,7 @@ void setup() {
     // you can set transmitter powers from 5 to 23 dBm:
     rf95.setTxPower(23, false);
 
-    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
+    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
         Serial.println("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.");
     } else{
         Serial.println("rf95 configuration failed.");
@@ -95,9 +95,9 @@ void loop() {
 
         case DQN_IDLE:  // TODO: make it into a library
             {
-                uint32_t sleep_time = random(1000, 5000); // sleep for random 1-5s
-                Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
-                device_sleep(sleep_time);
+                //uint32_t sleep_time = random(1000, 5000); // sleep for random 1-5s
+                //Serial.print("device sleep for "); Serial.print(sleep_time); Serial.println(" ms");
+                //device_sleep(sleep_time);
                 packet_size = random(DQN_MTU, (DQN_N - 1) * DQN_MTU);
                 Serial.print("sending packet size "); Serial.print(packet_size); Serial.println(" bytes");
                 // populate the mock data;
@@ -173,7 +173,7 @@ void dtq_send(){
     // we need to compute how many frames we need to skip
     // it can be very messy...
     // first align the device to the first data from
-    uint32_t sleep_time = OFFSET + 2 * DQN_LENGTH - millis(); // TODO: fix time here
+    uint32_t sleep_time = OFFSET + DQN_OVERHEAD * DQN_LENGTH - millis(); 
     Serial.print("device sleep ");Serial.print(sleep_time); Serial.println("before transmission in DTQ");
     device_sleep(sleep_time);
     // TODO: optimize this
@@ -186,7 +186,7 @@ void dtq_send(){
             counter++;
             device_sleep(DQN_LENGTH);
             if(counter == DQN_N) { // overhead block
-                device_sleep(2 * DQN_LENGTH);
+                device_sleep(DQN_OVERHEAD * DQN_LENGTH);
                 counter = 0;
             }
         } else { // need to transmit
@@ -199,7 +199,7 @@ void dtq_send(){
                 counter++;
                 while(millis() < start + DQN_LENGTH); // sleep till next frame
                 if(counter == DQN_N){
-                    device_sleep(2 * DQN_LENGTH);
+                    device_sleep(DQN_OVERHEAD * DQN_LENGTH);
                     counter = 0;
                 }
             }
@@ -213,8 +213,7 @@ void crq_wait(){
     // we need to sleep through to the next frame. then compute how many time to sleep
     // notice that for crq, queue_sleep_time is for entire frames
     // TODO: test this
-    // TODO: fix the time frame
-    uint32_t sleep_time = (queue_sleep_time) * (2 + DQN_N) * DQN_LENGTH; // sleep time after the next frame
+    uint32_t sleep_time = (queue_sleep_time) * (DQN_OVERHEAD + DQN_N) * DQN_LENGTH; // sleep time after the next frame
     queue_sleep_time = 0; // reset the queue sleep_time
     //uint32_t sleep_current_frame = (DQN_N + 2) * DQN_LENGTH + OFFSET - millis();
     // we don't need to calibrate to the beginning of the frame for two reasons
@@ -227,7 +226,7 @@ void crq_wait(){
 
 
 void wait_to_send(){
-    uint32_t total_cycle = (2 + DQN_N) * DQN_LENGTH; // TODO: fixed the cycle thing
+    uint32_t total_cycle = (DQN_OVERHEAD + DQN_N) * DQN_LENGTH; 
     uint32_t passed_time = (millis() - OFFSET) % total_cycle;
     uint32_t sleep_time = total_cycle - passed_time;
     Serial.print("device sleeps for "); Serial.print(sleep_time); Serial.println(" ms");
@@ -237,8 +236,8 @@ void wait_to_send(){
 void send_tr(){
     // TODO: use RSSI to determine the transmission rate
     uint32_t frame_start_time = millis();
-    chosen_slot = random(0, DQN_M);
-    uint32_t sleep_time = chosen_slot * DQN_LENGTH / DQN_M;
+    chosen_slot = 0; // random(0, DQN_M);
+    uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_FRAME / DQN_M;
     Serial.print("device choose mini-slot "); Serial.print(chosen_slot); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
     device_sleep(sleep_time);
@@ -258,7 +257,7 @@ void send_tr(){
     }
 
     // wait for TR TODO: fix this sleep
-    while(millis() < frame_start_time + DQN_LENGTH / 2){
+    while(millis() < frame_start_time + DQN_MINI_SLOT_FRAME - DQN_RECV_WINDOW){
     }
 
     // feedback receive
@@ -284,7 +283,7 @@ void sync_time(){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = received_time - DQN_LENGTH - FEEDBACK_TIME - DQN_GUARD; // TODO: fix the time
+                    OFFSET = received_time - DQN_MINI_SLOT_FRAME - FEEDBACK_TIME - DQN_GUARD; // TODO: fix the magic number 
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");
@@ -335,7 +334,7 @@ void handle_feedback(struct dqn_feedback* feedback){
         device_state = DQN_DTQ;
     } else {
         Serial.print("Something went wrong. device choose slot ");
-        Serial.print(chosen_slot); Serial.print(" status returned");
+        Serial.print(chosen_slot); Serial.print(" status returned at chosen slot");
         Serial.print(status); Serial.println();
     }
 }
@@ -344,6 +343,9 @@ void device_sleep(uint32_t time){
     // put radio into sleep
     //rf95.sleep();
     // switch to more energy efficient way to do this
-    delay(time);
+    uint32_t start_time = millis();
+    uint32_t end_time = start_time + time;
+    while(millis() < end_time);
+    //delay(time);
     //rf95.setMode(RHGenericDriver::RHModeIdle);
 }

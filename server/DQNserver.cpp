@@ -84,7 +84,7 @@ int main (int argc, const char* argv[] ){
         printf("rf95 set freq to %5.2f.\n", 915.0);
     }
 
-    if (rf95.setModemConfig(rf95.Bw500Cr45Sf128)){
+    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
         printf("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
     }else{
         printf("rf95 configuration failed.\n");
@@ -100,12 +100,16 @@ int main (int argc, const char* argv[] ){
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
 
     // parameters used by DQN
-    const uint32_t OFFSET_TIME = millis();
-    const uint32_t MINI_SLOT_TIME = DQN_LENGTH / DQN_M;
     uint16_t crq = 0;
     uint16_t dtq = 0;
 
+    // TODO: decouple them into multiple functions
+    printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
+            DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
+
     while (true){
+        uint32_t frame_start = millis();
+
         uint16_t new_crq = crq;
         uint16_t new_dtq = dtq;
 
@@ -115,11 +119,10 @@ int main (int argc, const char* argv[] ){
             tr_results[i] = 0;
         }
         const uint32_t CYCLE_START_TIME = millis();
-        printf("cycle started at %d\n", CYCLE_START_TIME);
         // wait for mini slot requests
         // TODO: need to adjust this time based on how fast
         // the packet can transmit
-        while(millis() < CYCLE_START_TIME + DQN_LENGTH){
+        while(millis() < CYCLE_START_TIME + DQN_MINI_SLOT_FRAME){
             if(rf95.available()){
                 uint32_t received_time = millis();
                 printf("got a TR packet\n");
@@ -131,9 +134,10 @@ int main (int argc, const char* argv[] ){
                     tr->crc = 0;
                     uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
                     // calculate the slot number
-                    uint16_t time_offset = received_time - CYCLE_START_TIME - TR_TIME;
-                    uint8_t mini_slot = time_offset / MINI_SLOT_TIME;
-                    printf("requested mini slot %d offset %d", mini_slot, time_offset % MINI_SLOT_TIME);
+                    uint32_t time_offset = received_time - CYCLE_START_TIME - TR_TIME;
+                    uint8_t mini_slot = time_offset / DQN_MINI_SLOT_LENGTH;
+                    printf("offset: %d requested mini slot %d offset %d", time_offset, 
+                            mini_slot, time_offset % DQN_MINI_SLOT_LENGTH);
                     // set the status of the mini slot 
                     if(packet_crc == crc){
                         tr_results[mini_slot] = tr->num_slots;
@@ -186,9 +190,9 @@ int main (int argc, const char* argv[] ){
 
         // moved to the receive window
         // DQN_LENGTH ms for overhead 
-        delay(DQN_LENGTH * 2 - (millis() - CYCLE_START_TIME));
+        delay(DQN_LENGTH * DQN_OVERHEAD - (millis() - CYCLE_START_TIME));
 
-        while(millis() < CYCLE_START_TIME + DQN_LENGTH * (DQN_N + 2)){
+        while(millis() < CYCLE_START_TIME + DQN_LENGTH * (DQN_OVERHEAD + DQN_N)){
             // TODO: add channel hopping
             if(rf95.available()){
                 // TODO: assemble the fragment together and return to the library user
@@ -197,6 +201,7 @@ int main (int argc, const char* argv[] ){
                 if (rf95.recv(buf, &len))
                 {
                     printf("receiving data... size %d\n", len);
+                    printf("time to start is %d\n", millis() - CYCLE_START_TIME - TR_TIME);
                     print_packet(buf, len);
                 } else{
                     printf("receiving failed\n");
@@ -209,6 +214,8 @@ int main (int argc, const char* argv[] ){
             printf("\n---CTRL-C Caught - Exiting---\n");
             break;
         }
+
+        printf("CYCLE is %d\n", millis() - frame_start);
     }
 
     return 0;
@@ -227,7 +234,7 @@ void print_feedback(struct dqn_feedback fb){
     for(int i = 0; i < DQN_M; i++){
         printf("[%d]: %d\t", i, fb.slots[i]);
     }
-    printf("\n CRQ: %d\tDTQ: %d\n", fb.crq_length, fb.dtq_length);
+    printf(" CRQ: %d\tDTQ: %d\n", fb.crq_length, fb.dtq_length);
 }
 
 void print_packet(uint8_t *data, int length){

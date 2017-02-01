@@ -135,8 +135,14 @@ int main (int argc, const char* argv[] ){
                     uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
                     // calculate the slot number
                     uint32_t time_offset = received_time - CYCLE_START_TIME - TR_TIME;
+                    
+                    // heuristic fix the correctness of time_offset due to clock issues
+                    if(time_offset < 0 and time_offset + DQN_GUARD > 0)
+                        time_offset = 0;
+
                     uint8_t mini_slot = time_offset / DQN_MINI_SLOT_LENGTH;
-                    printf("offset: %d requested mini slot %d offset %d", time_offset, 
+                    uint32_t slot_time_offset = time_offset % DQN_MINI_SLOT_LENGTH;
+                    printf("offset: %d requested mini slot %d offset %d\n", time_offset, 
                             mini_slot, time_offset % DQN_MINI_SLOT_LENGTH);
                     // set the status of the mini slot 
                     if(packet_crc == crc){
@@ -201,7 +207,6 @@ int main (int argc, const char* argv[] ){
                 if (rf95.recv(buf, &len))
                 {
                     printf("receiving data... size %d\n", len);
-                    printf("time to start is %d\n", millis() - CYCLE_START_TIME - TR_TIME);
                     print_packet(buf, len);
                 } else{
                     printf("receiving failed\n");

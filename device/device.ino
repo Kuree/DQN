@@ -163,8 +163,6 @@ void send_fragment(uint8_t *data, int total_size, int mtu){
             device_state = DQN_IDLE; // reset the device state if failed
         } else {
             Serial.print("packet fragment "); Serial.print(i); Serial.println(" sent");
-            Serial.print("Total size: "); Serial.print(total_size); Serial.print(" MTU: ");
-            Serial.println(mtu);
         }
     }
 }
@@ -192,7 +190,7 @@ void dtq_send(){
         } else { // need to transmit
             for(int i = 0; i < num_packets; i++){
                 uint32_t start = millis();
-                Serial.print("sending packet "); Serial.print(i); Serial.print(" of ");
+                Serial.print("sending packet "); Serial.print(i + 1); Serial.print(" of ");
                 Serial.print(num_packets); Serial.print(". Total size "); Serial.print(packet_size); Serial.println();
                 uint32_t size = (i != (num_packets - 1))? DQN_MTU: packet_size % DQN_MTU;
                 send_fragment(transmission_data + DQN_MTU * i, size, RH_RF95_MAX_MESSAGE_LEN); 
@@ -236,7 +234,7 @@ void wait_to_send(){
 void send_tr(){
     // TODO: use RSSI to determine the transmission rate
     uint32_t frame_start_time = millis();
-    chosen_slot = 0; // random(0, DQN_M);
+    chosen_slot = random(0, DQN_M);
     uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_FRAME / DQN_M;
     Serial.print("device choose mini-slot "); Serial.print(chosen_slot); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
@@ -283,7 +281,7 @@ void sync_time(){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = received_time - DQN_MINI_SLOT_FRAME - FEEDBACK_TIME - DQN_GUARD; // TODO: fix the magic number 
+                    OFFSET = received_time - DQN_MINI_SLOT_FRAME - FEEDBACK_TIME - 140; // TODO: fix the magic number 
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");

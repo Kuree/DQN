@@ -13,7 +13,7 @@
 #define DQN_PREAMBLE 6
 #define DQN_AVAILABLE_RATES 2
 #define DQN_RATE_0 256
-#define DQN_RATE_1 20524 // TODO: fixed this rate
+#define DQN_RATE_1 20524 
 
 #define FEEDBACK_TIME 280
 #define TR_TIME 215 
@@ -27,6 +27,7 @@
 #define DQN_CRQ  3
 #define DQN_DTQ  4
 #define DQN_REQ  5
+#define DQN_ADJT 6
 
 #define DQN_MTU (DQN_RATE_1 * DQN_LENGTH / 8000)
 #define DQN_MAX_PACKET (DQN_MTU * DQN_N)

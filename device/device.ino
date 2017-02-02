@@ -12,6 +12,7 @@
 
 // function prototypes
 void sync_time();
+void sync_time(bool);
 void device_sleep(uint32_t time);
 void send_packet();
 void wait_data_slot();
@@ -128,6 +129,9 @@ void send_packet(){
         switch(device_state) {
             case DQN_TRAN: 
                 {
+                    // sync before send
+                    device_state = DQN_ADJT;
+                    sync_time(true);
                     wait_to_send();
                     send_tr();
                     break;
@@ -147,7 +151,8 @@ void send_packet(){
             default:
                 // something went wrong
                 {
-                    Serial.println("device is in a corrupted state. trying to resend...");
+                    Serial.print("device is in a corrupted state "); Serial.print(device_state);
+                    Serial.println(" trying to resend...");
                     device_state = DQN_TRAN;
                     break;
                 }
@@ -272,6 +277,10 @@ void send_tr(){
 }
 
 void sync_time(){
+    sync_time(false);
+}
+
+void sync_time(bool use_loop){
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     const uint32_t START_TIME = millis();
@@ -281,7 +290,7 @@ void sync_time(){
 
     // wait for a feedback
     // and use the rssi to calibrate the actual time
-    while(millis() < START_TIME + DQN_LENGTH){ // TODO: fix this time
+    while(millis() < START_TIME + DQN_LENGTH || use_loop){
         if (rf95.available())
         {
             if (rf95.recv(buf, &len))
@@ -303,9 +312,13 @@ void sync_time(){
                     // if in transmission, need to check if we've requested successfully
                     if(device_state == DQN_SYNC){
                         device_state = DQN_IDLE;
+                        break;
                     } else if(device_state == DQN_TRAN) {
                         Serial.println("computing queue...");
                         handle_feedback(feedback);
+                    } else if(device_state == DQN_ADJT) {
+                        device_state = DQN_TRAN;
+                        break;
                     }
                 } else{
                     if(device_state == DQN_TRAN){

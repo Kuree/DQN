@@ -22,6 +22,7 @@ void handle_feedback(struct dqn_feedback *feedback);
 void dtq_send();
 void crq_wait();
 void send_fragment(uint8_t *data, int size, int mtu);
+void aloha_send(struct dqn_feedback*);
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -211,6 +212,7 @@ void dtq_send(){
                 }
             }
             has_sent = true;
+            packet_size = 0;
         }
     }
 }
@@ -362,6 +364,26 @@ void handle_feedback(struct dqn_feedback* feedback){
         Serial.print(status); Serial.println();
     }
 }
+
+void aloha_send(struct dqn_feedback* feedback){
+    if(packet_size != 0 && device_state == DQN_SYNC && device_state == DQN_IDLE) {
+        // calculate the dtq
+        int dtq = feedback->dtq_length;
+        for(int i = 0; i < DQN_M; i++){
+            if(feedback->slots[i] != 0 && feedback->slots[i] != DQN_N){
+                dtq += feedback->slots[i];
+            }
+        }
+        // we have packet to send yet not in the transmission mode
+        int num_packet = packet_size / DQN_MTU + 1;
+        if(dtq < DQN_N && num_packet < (DQN_N - dtq)) {
+            // there are enough free data slots we can send
+            queue_sleep_time = dtq;
+            device_state = DQN_DTQ;
+        }
+    }
+}
+            
 
 void device_sleep(uint32_t time){
     // put radio into sleep

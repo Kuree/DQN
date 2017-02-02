@@ -11,9 +11,12 @@
 #define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH)
 #define DQN_OVERHEAD (1 + DQN_MINI_SLOT_FRAME / DQN_LENGTH)
 #define DQN_PREAMBLE 6
-#define DQN_RATE 732
-//#define DQN_RATE 37500 // TODO: fixed this rate
+#define DQN_AVAILABLE_RATES 2
+#define DQN_RATE_0 256
+#define DQN_RATE_1 20524 // TODO: fixed this rate
 
+#define FEEDBACK_TIME 280
+#define TR_TIME 215 
 
 #define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program
 #define DQN_GUARD 2 // 2ms guard time
@@ -25,25 +28,28 @@
 #define DQN_DTQ  4
 #define DQN_REQ  5
 
-#define DQN_MTU (DQN_RATE * DQN_LENGTH / 8000)
+#define DQN_MTU (DQN_RATE_1 * DQN_LENGTH / 8000)
 #define DQN_MAX_PACKET (DQN_MTU * DQN_N)
 
 #include <stdint.h>
 #include <stdbool.h>
 
+
 struct dqn_tr{
     // 2 bytes
-    uint16_t        id;
+    // UNUSED
+    // uint16_t        id;
     // 1 byte
-    // NOTICE: since we don't want to a device requests 0 data slots
-    // everything is added by 1. e.g. if the this attribute is 1, the device is
-    // actually requesting for 2 data slots. Hence the range is 1-N
+    // NOTICE: we don't want to a device requests 0 data slots
     uint8_t  	    num_slots;
+    // this defines which rate the device wants to transmit
+    uint8_t         rate; 
     // 1 byte
     uint8_t		    crc;
-} __attribute__((packed));  // total is 4 bytes
+} __attribute__((packed));  // total is 3 bytes
 
 
+// UNUSED
 struct dqn_data{
     // 30 bytes
     uint8_t     data[30];
@@ -61,7 +67,7 @@ struct  dqn_feedback{
     uint8_t         slots[DQN_M];
     // TODO: add crc in feedback
     uint8_t         crc;
-} __attribute__((packed));  // total is 5 + FB bytes
+} __attribute__((packed));  // total is 5  + DQN_M bytes
 
 
 /* Bloom filter usage in feedback slot

@@ -2,8 +2,6 @@
 #include <protocol.h>
 #include <RH_RF95.h>
 
-#define DEVICE_ID 1234
-
 #define RFM95_CS 8
 #define RFM95_RST 4
 #define RFM95_INT 3
@@ -32,13 +30,17 @@ RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95
 int device_state = DQN_SYNC;
 // used to calculate the time
 uint32_t OFFSET;
-uint32_t FEEDBACK_TIME;
+//uint32_t FEEDBACK_TIME;
 
 // this is the message to send
 uint8_t transmission_data[DQN_MAX_PACKET];
 uint32_t packet_size;
 int chosen_slot;
 uint32_t queue_sleep_time;
+
+// change this before transmission
+uint32_t DQN_RATE_TABLE[DQN_AVAILABLE_RATES] = {DQN_RATE_0, DQN_RATE_1};
+uint32_t DQN_RATE = DQN_RATE_TABLE[0];
 
 void setup() {
     pinMode(13, OUTPUT);
@@ -66,9 +68,9 @@ void setup() {
     // The default transmitter power is 13dBm, using PA_BOOST.
     // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then 
     // you can set transmitter powers from 5 to 23 dBm:
-    rf95.setTxPower(23, false);
+    rf95.setTxPower(23);
 
-    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
+    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc)){
         Serial.println("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.");
     } else{
         Serial.println("rf95 configuration failed.");
@@ -80,7 +82,7 @@ void setup() {
     Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
 
     // compute the feedback time
-    FEEDBACK_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_RATE; // compute in millis second
+    //FEEDBACK_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_RATE; // compute in millis second
     Serial.print("feedback packet transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
     Serial.print("DQN MTU: ");Serial.print(DQN_MTU);Serial.println();
 }
@@ -168,6 +170,8 @@ void send_fragment(uint8_t *data, int total_size, int mtu){
 }
 
 void dtq_send(){
+    // switched to higher transmission rate
+    rf95.setModemConfig(rf95.Bw500Cr45Sf128);
     // we need to compute how many frames we need to skip
     // it can be very messy...
     // first align the device to the first data from
@@ -234,13 +238,18 @@ void wait_to_send(){
 void send_tr(){
     // TODO: use RSSI to determine the transmission rate
     uint32_t frame_start_time = millis();
-    chosen_slot = random(0, DQN_M);
+
+    // switch to slower transmission rate
+    rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+
+    chosen_slot = 0; //random(0, DQN_M);
     uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_FRAME / DQN_M;
     Serial.print("device choose mini-slot "); Serial.print(chosen_slot); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
     device_sleep(sleep_time);
     struct dqn_tr tr;
-    tr.id = DEVICE_ID;
+    // requests for higher transmission rate
+    tr.rate = 1;
     tr.num_slots = packet_size / DQN_MTU + 1;
 
     // calculate crc
@@ -266,6 +275,10 @@ void sync_time(){
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
     uint8_t len = sizeof(buf);
     const uint32_t START_TIME = millis();
+
+    // switch to slow transmission rate
+    rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+
     // wait for a feedback
     // and use the rssi to calibrate the actual time
     while(millis() < START_TIME + DQN_LENGTH){ // TODO: fix this time
@@ -281,7 +294,7 @@ void sync_time(){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = received_time - DQN_MINI_SLOT_FRAME - FEEDBACK_TIME - 140; // TODO: fix the magic number 
+                    OFFSET = received_time - DQN_MINI_SLOT_FRAME - FEEDBACK_TIME; // TODO: fix the magic number 
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");

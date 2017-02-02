@@ -12,15 +12,25 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <queue>
 
 #include <string.h>
 #include <RH_RF95.h>
 
 #include "../core/protocol.h"
 
+using namespace std;
+
 // DQN related constants
-const uint32_t FEEDBACK_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_RATE;
-const uint32_t TR_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_RATE; // take into packet header into account
+uint32_t DQN_RATE_TABLE[DQN_AVAILABLE_RATES] = {DQN_RATE_0, DQN_RATE_1};
+uint32_t DQN_RATE = DQN_RATE_TABLE[0];
+//const uint32_t TR_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_RATE; // take into packet header into account
+
+// queue to hold the rate transmission requests
+queue<uint8_t> dtq_rates;
+// define table for transmission rates
+// this is to be consistent with the rate defination in protocol.h 
+RH_RF95::ModemConfigChoice rates[2] = {RH_RF95::Bw500Cr48Sf4096NoCrc, RH_RF95::Bw500Cr45Sf128};
 
 
 //Function Definitions
@@ -84,7 +94,7 @@ int main (int argc, const char* argv[] ){
         printf("rf95 set freq to %5.2f.\n", 915.0);
     }
 
-    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096)){
+    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc)){
         printf("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
     }else{
         printf("rf95 configuration failed.\n");
@@ -95,7 +105,7 @@ int main (int argc, const char* argv[] ){
     rf95.setPreambleLength(DQN_PREAMBLE);
     printf("rf95 set preamble to %d\n", DQN_PREAMBLE);
 
-    rf95.setTxPower(23, false);
+    rf95.setTxPower(23);
 
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
 
@@ -108,8 +118,6 @@ int main (int argc, const char* argv[] ){
             DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
 
     while (true){
-        uint32_t frame_start = millis();
-
         uint16_t new_crq = crq;
         uint16_t new_dtq = dtq;
 
@@ -118,6 +126,10 @@ int main (int argc, const char* argv[] ){
         for(uint8_t i = 0; i < DQN_M; i++){
             tr_results[i] = 0;
         }
+        
+        // switch to lower transmission rate
+        rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+
         const uint32_t CYCLE_START_TIME = millis();
         // wait for mini slot requests
         // TODO: need to adjust this time based on how fast
@@ -139,19 +151,25 @@ int main (int argc, const char* argv[] ){
                     // heuristic fix the correctness of time_offset due to clock issues
                     if(time_offset < 0 and time_offset + DQN_GUARD > 0)
                         time_offset = 0;
-
-                    uint8_t mini_slot = time_offset / DQN_MINI_SLOT_LENGTH;
-                    uint32_t slot_time_offset = time_offset % DQN_MINI_SLOT_LENGTH;
-                    printf("offset: %d requested mini slot %d offset %d\n", time_offset, 
-                            mini_slot, time_offset % DQN_MINI_SLOT_LENGTH);
-                    // set the status of the mini slot 
-                    if(packet_crc == crc){
-                        tr_results[mini_slot] = tr->num_slots;
-                        new_dtq += tr->num_slots;
-                    } else{
-                        printf("actual requested: %d\n", tr->num_slots);
-                        tr_results[mini_slot] = DQN_N;
-                        new_crq += 1;
+                    else if(time_offset < 0) {
+                        printf("device has synchronization error");
+                    } else {
+                        uint8_t mini_slot = time_offset / DQN_MINI_SLOT_LENGTH;
+                        uint32_t slot_time_offset = time_offset % DQN_MINI_SLOT_LENGTH;
+                        printf("offset: %d requested mini slot %d offset %d\n", time_offset, 
+                                mini_slot, time_offset % DQN_MINI_SLOT_LENGTH);
+                        // set the status of the mini slot 
+                        if(packet_crc == crc){
+                            tr_results[mini_slot] = tr->num_slots;
+                            new_dtq += tr->num_slots;
+                            for(int i = 0; i < tr->num_slots; i++){
+                                dtq_rates.push(tr->rate);
+                            }
+                        } else{
+                            printf("actual requested: %d\n", tr->num_slots);
+                            tr_results[mini_slot] = DQN_N;
+                            new_crq += 1;
+                        }
                     }
                 }
             }
@@ -164,63 +182,64 @@ int main (int argc, const char* argv[] ){
         feedback.dtq_length = dtq;
         // process the mini slots
         for(int i = 0; i < DQN_M; i++){
-            //uint8_t result = 0;
-            //for(int j = 0; j < 4; j++){
-            //    // each status only needs 2 bits
-            //    uint8_t status = tr_results[j + i * 4];
-            //    // adding crq and dtq accordingly
-            //    result |= status << (3 - j); // lower address to high address
-            //}
-            // TODO: compress the space
             feedback.slots[i] = tr_results[i];
         }
 
         // handle crc
         feedback.crc = 0;
         feedback.crc = get_crc8((char*)&feedback, sizeof(feedback));
+        // switch to lower transmission rate
+        rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
         // send the feedback
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
         } else{
-            printf("sent feedback...\n");
             print_feedback(feedback);
         }
 
-        // change back to high transmission mode
-        //
-
         // reduce the queue length
-        dtq = new_dtq > DQN_N? new_dtq - DQN_N: 0;
+        // TODO: the DTQ update needs to be fixed once feedback is moved to the end
+        dtq = new_dtq; // > DQN_N? new_dtq - DQN_N: 0;
         crq = new_crq > 1? new_crq - 1: 0;
 
 
         // moved to the receive window
         // DQN_LENGTH ms for overhead 
         delay(DQN_LENGTH * DQN_OVERHEAD - (millis() - CYCLE_START_TIME));
-
-        while(millis() < CYCLE_START_TIME + DQN_LENGTH * (DQN_OVERHEAD + DQN_N)){
-            // TODO: add channel hopping
-            if(rf95.available()){
-                // TODO: assemble the fragment together and return to the library user
-                uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
-                uint8_t len = sizeof(buf);
-                if (rf95.recv(buf, &len))
-                {
-                    printf("receiving data... size %d\n", len);
-                    print_packet(buf, len);
-                } else{
-                    printf("receiving failed\n");
+        
+        for(int i = 0; i < DQN_N; i++){
+            int start = millis();
+            if(dtq == 0){
+                while(millis() < start + DQN_LENGTH);
+            } else {
+                printf("dtq rates size %d\n", dtq_rates.size());
+                int rate = dtq_rates.front();
+                dtq_rates.pop();
+                rf95.setModemConfig(rates[rate]);
+                while(millis() < start + DQN_LENGTH){
+                    if(rf95.available()){
+                        // TODO: assemble the fragment together and return to the library user
+                        uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
+                        uint8_t len = sizeof(buf);
+                        if (rf95.recv(buf, &len))
+                        {
+                            printf("receiving data... size %d\n", len);
+                            print_packet(buf, len);
+                        } else{
+                            printf("receiving failed\n");
+                        }
+                    }
+   
                 }
+                dtq--;
             }
         }
-
+        
         if (flag)
         {
             printf("\n---CTRL-C Caught - Exiting---\n");
             break;
         }
-
-        printf("CYCLE is %d\n", millis() - frame_start);
     }
 
     return 0;

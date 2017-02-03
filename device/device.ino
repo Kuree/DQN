@@ -236,9 +236,8 @@ void crq_wait(){
 
 
 void wait_to_send(){
-    uint32_t total_cycle = (DQN_OVERHEAD + DQN_N) * (DQN_LENGTH + DQN_GUARD); 
-    uint32_t passed_time = (millis() - OFFSET) % total_cycle;
-    uint32_t sleep_time = total_cycle - passed_time;
+    // this will be called after off is synced
+    uint32_t sleep_time = OFFSET + DQN_LENGTH - millis();
     Serial.print("device sleeps for "); Serial.print(sleep_time); Serial.println(" ms before sending TR");
     device_sleep(sleep_time);
 }
@@ -274,7 +273,7 @@ void send_tr(){
     }
 
     // sleep till the beginning of next feedback
-    while(millis() < frame_start_time + (DQN_LENGTH + DQN_GUARD) * DQN_N - DQN_GUARD){
+    while(millis() < frame_start_time + DQN_MINI_SLOT_FRAME + (DQN_LENGTH + DQN_GUARD) * DQN_N - DQN_GUARD){
     }
 
     // feedback receive

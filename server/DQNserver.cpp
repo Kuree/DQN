@@ -113,7 +113,6 @@ int main (int argc, const char* argv[] ){
     uint16_t crq = 0;
     uint16_t dtq = 0;
 
-    // TODO: decouple them into multiple functions
     printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
             DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
 
@@ -153,6 +152,8 @@ int main (int argc, const char* argv[] ){
             print_feedback(feedback);
         }
 
+        // offset to TR frame
+        while(millis() < CYCLE_START_TIME + DQN_LENGTH);
         // sleep for GUARD time
         delay(DQN_GUARD);
         
@@ -178,7 +179,7 @@ int main (int argc, const char* argv[] ){
                     tr->crc = 0;
                     uint8_t packet_crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
                     // calculate the slot number
-                    uint32_t time_offset = received_time - CYCLE_START_TIME - TR_TIME;
+                    uint32_t time_offset = received_time - tr_start_time - TR_TIME;
 
                     // heuristic fix the correctness of time_offset due to clock issues
                     if(time_offset < 0 and time_offset + DQN_GUARD > 0)
@@ -209,12 +210,12 @@ int main (int argc, const char* argv[] ){
 
 
         // moved to the receive window
-        delay(DQN_GUARD);
+        //delay(DQN_GUARD);
         for(int i = 0; i < DQN_N; i++){
             int start = millis();
             if(dtq == 0){
                 // aloha send
-                while(millis() < start + DQN_LENGTH){
+                while(millis() < start + DQN_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
                         uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -234,7 +235,7 @@ int main (int argc, const char* argv[] ){
                 int rate = dtq_rates.front();
                 dtq_rates.pop();
                 rf95.setModemConfig(rates[rate]);
-                while(millis() < start + DQN_LENGTH){
+                while(millis() < start + DQN_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
                         uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];

@@ -117,24 +117,56 @@ int main (int argc, const char* argv[] ){
     printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
             DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
 
-    while (true){
-        uint16_t new_crq = crq;
-        uint16_t new_dtq = dtq;
+    uint8_t tr_results[DQN_M];
+    // setup TR counter
+    for(uint8_t i = 0; i < DQN_M; i++){
+        tr_results[i] = 0;
+    }
 
-        // setup TR counter
-        uint8_t tr_results[DQN_M];
-        for(uint8_t i = 0; i < DQN_M; i++){
-            tr_results[i] = 0;
-        }
+   while (true){
+        uint16_t new_crq = 0;
+        uint16_t new_dtq = 0;
 
         // switch to lower transmission rate
         rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
 
         const uint32_t CYCLE_START_TIME = millis();
+
+        // so that TR and feedback will be put into the same channel frequency later on
+        struct dqn_feedback feedback;
+        feedback.crq_length = crq;
+        feedback.dtq_length = dtq;
+        // process the mini slots
+        for(int i = 0; i < DQN_M; i++){
+            feedback.slots[i] = tr_results[i];
+        }
+
+        // handle crc
+        feedback.crc = 0;
+        feedback.crc = get_crc8((char*)&feedback, sizeof(feedback));
+        // switch to lower transmission rate
+        rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+        // send the feedback
+        if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
+            printf("sending feedback failed");
+        } else{
+            print_feedback(feedback);
+        }
+
+        // sleep for GUARD time
+        delay(DQN_GUARD);
+        
+        // setup TR counter
+        for(uint8_t i = 0; i < DQN_M; i++){
+            tr_results[i] = 0;
+        }
+
+        int tr_start_time = millis();
+
         // wait for mini slot requests
         // TODO: need to adjust this time based on how fast
         // the packet can transmit
-        while(millis() < CYCLE_START_TIME + DQN_MINI_SLOT_FRAME){
+        while(millis() < tr_start_time + DQN_MINI_SLOT_FRAME){
             if(rf95.available()){
                 uint32_t received_time = millis();
                 printf("got a TR packet\n");
@@ -175,38 +207,9 @@ int main (int argc, const char* argv[] ){
             }
         }
 
-        // immediately send the feedback result 
-        // so that TR and feedback will be put into the same channel frequency later on
-        struct dqn_feedback feedback;
-        feedback.crq_length = crq;
-        feedback.dtq_length = dtq;
-        // process the mini slots
-        for(int i = 0; i < DQN_M; i++){
-            feedback.slots[i] = tr_results[i];
-        }
-
-        // handle crc
-        feedback.crc = 0;
-        feedback.crc = get_crc8((char*)&feedback, sizeof(feedback));
-        // switch to lower transmission rate
-        rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
-        // send the feedback
-        if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
-            printf("sending feedback failed");
-        } else{
-            print_feedback(feedback);
-        }
-
-        // reduce the queue length
-        // TODO: the DTQ update needs to be fixed once feedback is moved to the end
-        dtq = new_dtq; // > DQN_N? new_dtq - DQN_N: 0;
-        crq = new_crq > 1? new_crq - 1: 0;
-
 
         // moved to the receive window
-        // DQN_LENGTH ms for overhead 
-        delay(DQN_LENGTH * DQN_OVERHEAD - (millis() - CYCLE_START_TIME));
-
+        delay(DQN_GUARD);
         for(int i = 0; i < DQN_N; i++){
             int start = millis();
             if(dtq == 0){
@@ -249,6 +252,10 @@ int main (int argc, const char* argv[] ){
                 dtq--;
             }
         }
+        
+        // TODO: the DTQ update needs to be fixed once feedback is moved to the end
+        dtq += new_dtq;
+        crq = (crq + new_crq) < 1? 0: crq+new_crq - 1;
 
         if (flag)
         {

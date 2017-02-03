@@ -19,7 +19,7 @@
 #define TR_TIME 215 
 
 #define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program
-#define DQN_GUARD 2 // 2ms guard time
+#define DQN_GUARD 15 // 15ms guard time this is used for frequency changing
 // device only
 #define DQN_IDLE 0
 #define DQN_SYNC 1
@@ -37,9 +37,6 @@
 
 
 struct dqn_tr{
-    // 2 bytes
-    // UNUSED
-    // uint16_t        id;
     // 1 byte
     // NOTICE: we don't want to a device requests 0 data slots
     uint8_t  	    num_slots;
@@ -62,11 +59,7 @@ struct  dqn_feedback{
     uint16_t        dtq_length;
     // 2 bytes
     uint16_t        crq_length;
-    // 8 bytes
-    // NOT USED
-    // uint64_t        result; // this is bloom filter result
     uint8_t         slots[DQN_M];
-    // TODO: add crc in feedback
     uint8_t         crc;
 } __attribute__((packed));  // total is 5  + DQN_M bytes
 

@@ -121,11 +121,12 @@ int main (int argc, const char* argv[] ){
     for(uint8_t i = 0; i < DQN_M; i++){
         tr_results[i] = 0;
     }
+    
+    uint16_t new_crq = 0;
+    uint16_t new_dtq = 0;
+
 
    while (true){
-        uint16_t new_crq = 0;
-        uint16_t new_dtq = 0;
-
         // switch to lower transmission rate
         rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
 
@@ -151,6 +152,12 @@ int main (int argc, const char* argv[] ){
         } else{
             print_feedback(feedback);
         }
+
+        dtq += new_dtq;
+        crq = (crq + new_crq) < 1? 0: crq+new_crq - 1;
+
+        new_dtq = 0;
+        new_crq = 0;
 
         // offset to TR frame
         while(millis() < CYCLE_START_TIME + DQN_LENGTH);
@@ -254,10 +261,6 @@ int main (int argc, const char* argv[] ){
             }
         }
         
-        // TODO: the DTQ update needs to be fixed once feedback is moved to the end
-        dtq += new_dtq;
-        crq = (crq + new_crq) < 1? 0: crq+new_crq - 1;
-
         if (flag)
         {
             printf("\n---CTRL-C Caught - Exiting---\n");

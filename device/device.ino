@@ -146,8 +146,14 @@ void send_packet(){
             case DQN_DTQ:
                 {
                     dtq_send();
-                    has_sent = true;
+                    device_state = DQN_SENT;
+                    break;
+                }
+            case DQN_SENT:
+                {
+                    // TODO: wait for feedback
                     device_state = DQN_IDLE;
+                    has_sent = true;
                     break;
                 }
             default:

@@ -5,6 +5,7 @@
 #define LORA_HEADER 4
 
 #define DQN_LORA false
+#define DQN_ALOHA false
 
 #define DQN_M 4
 #define DQN_N 4 // changed to a small number to make debug easier
@@ -16,6 +17,7 @@
 #define DQN_AVAILABLE_RATES 2
 #define DQN_RATE_0 256
 #define DQN_RATE_1 20524 
+#define DQN_ACK_LENGTH (DQN_N / 8 + 1)
 
 #define FEEDBACK_TIME 280
 #define TR_TIME 215 
@@ -30,7 +32,7 @@
 #define DQN_DTQ  4
 #define DQN_REQ  5
 #define DQN_ADJT 6
-#define DQN_ALOHA 7
+#define DQN_SENT 7
 
 #define DQN_MTU (DQN_RATE_1 * DQN_LENGTH / 8000)
 #define DQN_MAX_PACKET (DQN_MTU * DQN_N)

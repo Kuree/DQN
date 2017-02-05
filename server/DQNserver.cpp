@@ -35,7 +35,7 @@ RH_RF95::ModemConfigChoice rates[2] = {RH_RF95::Bw500Cr48Sf4096NoCrc, RH_RF95::B
 
 //Function Definitions
 void sig_handler(int sig);
-void print_feedback(struct dqn_feedback fb);
+void print_feedback(struct dqn_feedback* fb);
 void print_packet(uint8_t *data, int length);
 void set_ack_bit(int index, uint8_t* ack);
 
@@ -112,7 +112,7 @@ int main (int argc, const char* argv[] ){
     // parameters used by DQN
     uint16_t crq = 0;
     uint16_t dtq = 0;
-    uint8_t  ack[DQN_N / 8];
+    uint8_t  ack[DQN_ACK_LENGTH];
     
 
     printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
@@ -125,7 +125,7 @@ int main (int argc, const char* argv[] ){
     }
 
     // setup ack
-    for(int i = 0; i < DQN_N / 8; i++){
+    for(int i = 0; i < DQN_ACK_LENGTH; i++){
         ack[i] = 0;
     }
     
@@ -149,7 +149,7 @@ int main (int argc, const char* argv[] ){
         }
 
         // load ack
-        memcpy(feedback.ack, ack, DQN_N / 8);
+        memcpy(feedback.ack, ack, DQN_ACK_LENGTH);
 
         // handle crc
         feedback.crc = 0;
@@ -160,7 +160,7 @@ int main (int argc, const char* argv[] ){
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
         } else{
-            print_feedback(feedback);
+            print_feedback(&feedback);
         }
 
         dtq += new_dtq;
@@ -226,7 +226,7 @@ int main (int argc, const char* argv[] ){
         }
 
         // reset the ack
-        for(int i = 0; i < DQN_N / 8; i++){
+        for(int i = 0; i < DQN_ACK_LENGTH; i++){
             ack[i] = 0;
         }
 
@@ -305,11 +305,23 @@ void sig_handler(int sig)
     flag=1;
 }
 
-void print_feedback(struct dqn_feedback fb){
+void print_feedback(struct dqn_feedback* fb){
     for(int i = 0; i < DQN_M; i++){
-        printf("[%d]: %d\t", i, fb.slots[i]);
+        printf("[%d]: %d\t", i, fb->slots[i]);
     }
-    printf(" CRQ: %d\tDTQ: %d\n", fb.crq_length, fb.dtq_length);
+    printf(" CRQ: %d\tDTQ: %d\tACK: ", fb->crq_length, fb->dtq_length);
+    
+    for(int i = 0; i < DQN_N; i++){
+        int main_index = i / 8;
+        int ack_index = i % 8;
+        if((fb->ack[main_index] >> ack_index) & 1)
+            printf("1");
+        else
+            printf("0");
+        if(i % 8 == 7)
+            printf(" ");
+    }
+    printf("\n");
 }
 
 void print_packet(uint8_t *data, int length){

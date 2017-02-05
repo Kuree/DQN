@@ -37,7 +37,7 @@ RH_RF95::ModemConfigChoice rates[2] = {RH_RF95::Bw500Cr48Sf4096NoCrc, RH_RF95::B
 void sig_handler(int sig);
 void print_feedback(struct dqn_feedback fb);
 void print_packet(uint8_t *data, int length);
-
+void set_ack_bit(int index, uint8_t* ack);
 
 // pin numers use wiringPi numbers.
 #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
@@ -112,6 +112,8 @@ int main (int argc, const char* argv[] ){
     // parameters used by DQN
     uint16_t crq = 0;
     uint16_t dtq = 0;
+    uint8_t  ack[DQN_N / 8];
+    
 
     printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
             DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
@@ -120,6 +122,11 @@ int main (int argc, const char* argv[] ){
     // setup TR counter
     for(uint8_t i = 0; i < DQN_M; i++){
         tr_results[i] = 0;
+    }
+
+    // setup ack
+    for(int i = 0; i < DQN_N / 8; i++){
+        ack[i] = 0;
     }
     
     uint16_t new_crq = 0;
@@ -140,6 +147,9 @@ int main (int argc, const char* argv[] ){
         for(int i = 0; i < DQN_M; i++){
             feedback.slots[i] = tr_results[i];
         }
+
+        // load ack
+        memcpy(feedback.ack, ack, DQN_N / 8);
 
         // handle crc
         feedback.crc = 0;
@@ -215,6 +225,10 @@ int main (int argc, const char* argv[] ){
             }
         }
 
+        // reset the ack
+        for(int i = 0; i < DQN_N / 8; i++){
+            ack[i] = 0;
+        }
 
         // moved to the receive window
         //delay(DQN_GUARD);
@@ -222,6 +236,7 @@ int main (int argc, const char* argv[] ){
             int start = millis();
             if(dtq == 0){
                 // aloha send
+                rf95.setModemConfig(rates[1]);
                 while(millis() < start + DQN_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
@@ -231,6 +246,8 @@ int main (int argc, const char* argv[] ){
                         {
                             printf("receiving data... size %d\n", len);
                             print_packet(buf, len);
+                            // turn on the ack bit
+                            set_ack_bit(i, ack);
                         } else{
                             printf("receiving failed\n");
                         }
@@ -251,6 +268,7 @@ int main (int argc, const char* argv[] ){
                         {
                             printf("receiving data... size %d\n", len);
                             print_packet(buf, len);
+                            set_ack_bit(i, ack);
                         } else{
                             printf("receiving failed\n");
                         }
@@ -269,6 +287,13 @@ int main (int argc, const char* argv[] ){
     }
 
     return 0;
+}
+
+
+void set_ack_bit(int index, uint8_t* ack){
+    int main_index = index / 8;
+    int ack_index = index % 8;
+    ack[main_index] |= 1 << ack_index;
 }
 
 void sig_handler(int sig)

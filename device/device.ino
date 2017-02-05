@@ -22,7 +22,7 @@ void handle_feedback(struct dqn_feedback *feedback);
 void dtq_send();
 void crq_wait();
 void send_fragment(uint8_t *data, int size, int mtu);
-void aloha_send(struct dqn_feedback*);
+bool aloha_send(struct dqn_feedback*);
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -133,6 +133,7 @@ void send_packet(){
                     // sync before send
                     device_state = DQN_ADJT;
                     sync_time(true);
+                    if(device_state != DQN_TRAN) break; // due to aloha mode
                     wait_to_send();
                     send_tr();
                     break;
@@ -180,7 +181,7 @@ void dtq_send(){
     // we need to compute how many frames we need to skip
     // it can be very messy...
     // first align the device after TR
-    uint32_t sleep_time = OFFSET + DQN_MINI_SLOT_FRAME - millis(); 
+    uint32_t sleep_time = OFFSET + DQN_LENGTH + DQN_GUARD + DQN_MINI_SLOT_FRAME - millis(); 
     Serial.print("device sleep ");Serial.print(sleep_time); Serial.println("before transmission in DTQ");
     device_sleep(sleep_time);
     // TODO: optimize this
@@ -251,7 +252,7 @@ void send_tr(){
     // NOTE: this has 15 ms switching time
     rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
 
-    chosen_slot = 0; //random(0, DQN_M);
+    chosen_slot = random(0, DQN_M);
     uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_FRAME / DQN_M;
     Serial.print("device choose mini-slot "); Serial.print(chosen_slot); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
@@ -273,7 +274,7 @@ void send_tr(){
     }
 
     // sleep till the beginning of next feedback
-    while(millis() < frame_start_time + DQN_MINI_SLOT_FRAME + (DQN_LENGTH + DQN_GUARD) * DQN_N - DQN_GUARD){
+    while(millis() < frame_start_time + DQN_MINI_SLOT_FRAME + (DQN_LENGTH + DQN_GUARD) * DQN_N - 2 * DQN_GUARD){
     }
 
     // feedback receive
@@ -314,14 +315,18 @@ void sync_time(bool use_loop){
                     // if the device just started up
                     // changed to idle
                     // if in transmission, need to check if we've requested successfully
-                    if(device_state == DQN_SYNC){
-                        device_state = DQN_IDLE;
-                        break;
-                    } else if(device_state == DQN_TRAN) {
-                        Serial.println("computing queue...");
-                        handle_feedback(feedback);
-                    } else if(device_state == DQN_ADJT) {
-                        device_state = DQN_TRAN;
+                    if(!aloha_send(feedback)){
+                        if(device_state == DQN_SYNC){
+                            device_state = DQN_IDLE;
+                            break;
+                        } else if(device_state == DQN_TRAN) {
+                            Serial.println("computing queue...");
+                            handle_feedback(feedback);
+                        } else if(device_state == DQN_ADJT) {
+                            device_state = DQN_TRAN;
+                            break;
+                        }
+                    } else {
                         break;
                     }
                 } else{
@@ -370,8 +375,9 @@ void handle_feedback(struct dqn_feedback* feedback){
     }
 }
 
-void aloha_send(struct dqn_feedback* feedback){
-    if(packet_size != 0 && device_state == DQN_SYNC && device_state == DQN_IDLE) {
+bool aloha_send(struct dqn_feedback* feedback){
+    if(DQN_ALOHA && packet_size != 0 && 
+        (device_state == DQN_SYNC || device_state == DQN_IDLE || device_state == DQN_ADJT)) {
         // calculate the dtq
         int dtq = feedback->dtq_length;
         for(int i = 0; i < DQN_M; i++){
@@ -385,10 +391,13 @@ void aloha_send(struct dqn_feedback* feedback){
             // there are enough free data slots we can send
             queue_sleep_time = dtq;
             device_state = DQN_DTQ;
+            Serial.println("ALOHA mode on. switched to transmission mode");
+            return true;
         }
     }
+    return false;
 }
-            
+
 
 void device_sleep(uint32_t time){
     // put radio into sleep

@@ -4,6 +4,8 @@
 // define radio config
 #define LORA_HEADER 4
 
+#define DQN_LORA false
+
 #define DQN_M 4
 #define DQN_N 4 // changed to a small number to make debug easier
 #define DQN_LENGTH 400
@@ -28,6 +30,7 @@
 #define DQN_DTQ  4
 #define DQN_REQ  5
 #define DQN_ADJT 6
+#define DQN_ALOHA 7
 
 #define DQN_MTU (DQN_RATE_1 * DQN_LENGTH / 8000)
 #define DQN_MAX_PACKET (DQN_MTU * DQN_N)
@@ -60,8 +63,9 @@ struct  dqn_feedback{
     // 2 bytes
     uint16_t        crq_length;
     uint8_t         slots[DQN_M];
+    uint8_t         ack[DQN_N / 8];
     uint8_t         crc;
-} __attribute__((packed));  // total is 5  + DQN_M bytes
+} __attribute__((packed));  // total is 5  + DQN_M + DQN_N / 8 bytes
 
 
 /* Bloom filter usage in feedback slot

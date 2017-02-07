@@ -42,10 +42,6 @@ uint32_t packet_size;
 int chosen_slot;
 uint32_t queue_sleep_time;
 
-// change this before transmission
-uint32_t DQN_RATE_TABLE[DQN_AVAILABLE_RATES] = {DQN_RATE_0, DQN_RATE_1};
-uint32_t DQN_RATE = DQN_RATE_TABLE[0];
-
 void setup() {
     pinMode(13, OUTPUT);
     digitalWrite(13, LOW);
@@ -86,7 +82,6 @@ void setup() {
     Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
 
     // compute the feedback time
-    //FEEDBACK_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_feedback)) * 8000 / DQN_RATE; // compute in millis second
     Serial.print("feedback packet transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
     Serial.print("DQN MTU: ");Serial.print(DQN_MTU);Serial.println();
 }
@@ -200,9 +195,9 @@ void dtq_send(){
         if(queue_sleep_time){
             queue_sleep_time--;
             counter++;
-            device_sleep(DQN_LENGTH + DQN_GUARD);
+            device_sleep(DQN_DATA_LENGTH + DQN_GUARD);
             if(counter == DQN_N) { // overhead block
-                device_sleep(DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD));
+                device_sleep(DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD)); // TODO: fix overhead length
                 counter = 0;
             }
         } else { // need to transmit
@@ -215,11 +210,11 @@ void dtq_send(){
                 Serial.print("sending packet "); Serial.print(i + 1); Serial.print(" of ");
                 Serial.print(num_packets); Serial.print(". Total size "); Serial.print(packet_size); Serial.println();
                 uint32_t size = (i != (num_packets - 1))? DQN_MTU: packet_size % DQN_MTU;
-                send_fragment(transmission_data + DQN_MTU * i, size, RH_RF95_MAX_MESSAGE_LEN); 
+                send_fragment(transmission_data + DQN_MTU * i, size, RH_RF95_MAX_MESSAGE_LEN); // TODO: simplify this 
                 counter++;
-                while(millis() < start + DQN_LENGTH + DQN_GUARD); // sleep till next frame
+                while(millis() < start + DQN_DATA_LENGTH + DQN_GUARD); // sleep till next frame
                 if(counter == DQN_N){
-                    device_sleep(DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD));
+                    device_sleep(DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD)); // TODO: fix overhead length
                     counter = 0;
                 }
             }
@@ -234,9 +229,9 @@ void crq_wait(){
     // we need to sleep through to the next frame. then compute how many time to sleep
     // notice that for crq, queue_sleep_time is for entire frames
     // TODO: test this
-    uint32_t sleep_time = (queue_sleep_time) * (DQN_OVERHEAD + DQN_N) * (DQN_LENGTH + DQN_GUARD); // sleep time after the next frame
+    uint32_t sleep_time = (queue_sleep_time) * (DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD) + 
+        DQN_N *(DQN_DATA_LENGTH + DQN_GUARD)); // sleep time after the next frame
     queue_sleep_time = 0; // reset the queue sleep_time
-    //uint32_t sleep_current_frame = (DQN_N + 2) * DQN_LENGTH + OFFSET - millis();
     // we don't need to calibrate to the beginning of the frame for two reasons
     //  1. use sleep_time will set the device to middle of the frame before
     //  2. once the device is swtiched to transmission state, wait_send_send() will set the device
@@ -293,7 +288,7 @@ void send_tr(){
     }
 
     // sleep till the beginning of next feedback
-    while(millis() < frame_start_time + DQN_MINI_SLOT_FRAME + (DQN_LENGTH + DQN_GUARD) * DQN_N - 2 * DQN_GUARD){
+    while(millis() < frame_start_time + DQN_MINI_SLOT_FRAME + (DQN_DATA_LENGTH + DQN_GUARD) * DQN_N - 2 * DQN_GUARD){
     }
 
     // feedback receive

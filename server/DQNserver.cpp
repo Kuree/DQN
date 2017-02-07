@@ -21,11 +21,6 @@
 
 using namespace std;
 
-// DQN related constants
-uint32_t DQN_RATE_TABLE[DQN_AVAILABLE_RATES] = {DQN_RATE_0, DQN_RATE_1};
-uint32_t DQN_RATE = DQN_RATE_TABLE[0];
-//const uint32_t TR_TIME = (LORA_HEADER + DQN_PREAMBLE + sizeof(struct dqn_tr)) * 8000 / DQN_RATE; // take into packet header into account
-
 // queue to hold the rate transmission requests
 queue<uint8_t> dtq_rates;
 // define table for transmission rates
@@ -241,7 +236,7 @@ int main (int argc, const char* argv[] ){
                 // aloha send
                 // TODO: fix this
                 switch_fast();
-                while(millis() < start + DQN_LENGTH + DQN_GUARD){
+                while(millis() < start + DQN_DATA_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
                         uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -267,10 +262,9 @@ int main (int argc, const char* argv[] ){
                 int sf = values[0];
                 int cr = values[1];
                 int use_crc = values[2];
-                printf("sf: %d, cr: %d\n", sf, cr);
                 rf95.setEncoding(sf, cr, use_crc);
 
-                while(millis() < start + DQN_LENGTH + DQN_GUARD){
+                while(millis() < start + DQN_DATA_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
                         uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];

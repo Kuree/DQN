@@ -8,15 +8,15 @@
 #define DQN_ALOHA false
 
 #define DQN_M 4
-#define DQN_N 4 // changed to a small number to make debug easier
+#define DQN_N 16 // changed to a small number to make debug easier
 #define DQN_LENGTH 400
+#define DQN_DATA_LENGTH 100
+
 #define DQN_MINI_SLOT_LENGTH 200
 #define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH)
 #define DQN_OVERHEAD (1 + DQN_MINI_SLOT_FRAME / DQN_LENGTH)
 #define DQN_PREAMBLE 6
-#define DQN_AVAILABLE_RATES 2
-#define DQN_RATE_0 256
-#define DQN_RATE_1 20524 
+#define DQN_FAST_RATE 20524 // TODO: build it into a table so that nodes can look it up 
 #define DQN_ACK_LENGTH (DQN_N / 8 + 1)
 
 // define encodings
@@ -50,7 +50,7 @@
 #define DQN_ADJT 6
 #define DQN_SENT 7
 
-#define DQN_MTU (DQN_RATE_1 * DQN_LENGTH / 8000)
+#define DQN_MTU 255
 #define DQN_MAX_PACKET (DQN_MTU * DQN_N)
 
 #include <stdint.h>

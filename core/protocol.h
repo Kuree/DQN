@@ -132,5 +132,7 @@ uint8_t get_crc8(char *data, int len);
 uint32_t get_transmission_time(int8_t rssi);
 
 // passed in tutple pointer to save memory space
-int* get_rate_config(uint8_t rate, int* values);
+int* decode_rate(uint8_t rate, int* values);
+
+uint8_t encode_rate(int sf, int cr, bool crc);
 #endif

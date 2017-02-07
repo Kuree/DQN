@@ -38,6 +38,8 @@ void sig_handler(int sig);
 void print_feedback(struct dqn_feedback* fb);
 void print_packet(uint8_t *data, int length);
 void set_ack_bit(int index, uint8_t* ack);
+void switch_oh();
+void switch_fast();
 
 // pin numers use wiringPi numbers.
 #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
@@ -135,7 +137,7 @@ int main (int argc, const char* argv[] ){
 
    while (true){
         // switch to lower transmission rate
-        rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+        switch_oh();
 
         const uint32_t CYCLE_START_TIME = millis();
 
@@ -155,7 +157,8 @@ int main (int argc, const char* argv[] ){
         feedback.crc = 0;
         feedback.crc = get_crc8((char*)&feedback, sizeof(feedback));
         // switch to lower transmission rate
-        rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+        switch_oh();
+
         // send the feedback
         if(!rf95.send((uint8_t *)&feedback, sizeof(feedback))){
             printf("sending feedback failed");
@@ -236,7 +239,8 @@ int main (int argc, const char* argv[] ){
             int start = millis();
             if(dtq == 0){
                 // aloha send
-                rf95.setModemConfig(rates[1]);
+                // TODO: fix this
+                switch_fast();
                 while(millis() < start + DQN_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
@@ -258,7 +262,14 @@ int main (int argc, const char* argv[] ){
                 printf("dtq rates size %d\n", dtq_rates.size());
                 int rate = dtq_rates.front();
                 dtq_rates.pop();
-                rf95.setModemConfig(rates[rate]);
+                int values[3];
+                decode_rate(rate, values);
+                int sf = values[0];
+                int cr = values[1];
+                int use_crc = values[2];
+                printf("sf: %d, cr: %d\n", sf, cr);
+                rf95.setEncoding(sf, cr, use_crc);
+
                 while(millis() < start + DQN_LENGTH + DQN_GUARD){
                     if(rf95.available()){
                         // TODO: assemble the fragment together and return to the library user
@@ -295,6 +306,16 @@ void set_ack_bit(int index, uint8_t* ack){
     int ack_index = index % 8;
     ack[main_index] |= 1 << ack_index;
 }
+
+void switch_oh(){
+    rf95.setEncoding(DQN_SF_4096, DQN_CR_48, false);
+}
+
+void switch_fast(){
+    rf95.setEncoding(DQN_SF_128, DQN_CR_45);
+}
+
+
 
 void sig_handler(int sig)
 {

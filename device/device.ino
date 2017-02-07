@@ -23,6 +23,8 @@ void dtq_send();
 void crq_wait();
 void send_fragment(uint8_t *data, int size, int mtu);
 bool aloha_send(struct dqn_feedback*);
+void switch_oh();
+void switch_fast();
 
 // Singleton instance of the radio driver
 RH_RF95 rf95(RFM95_CS, RFM95_INT); // Adafruit Feather M0 with RFM95 
@@ -206,7 +208,9 @@ void dtq_send(){
         } else { // need to transmit
             for(int i = 0; i < num_packets; i++){
                 // NOTE: this has 15ms delay
-                rf95.setModemConfig(rf95.Bw500Cr45Sf128);
+                // fast transmission
+                switch_fast();
+
                 uint32_t start = millis();
                 Serial.print("sending packet "); Serial.print(i + 1); Serial.print(" of ");
                 Serial.print(num_packets); Serial.print(". Total size "); Serial.print(packet_size); Serial.println();
@@ -249,6 +253,15 @@ void wait_to_send(){
     device_sleep(sleep_time);
 }
 
+
+void switch_oh(){
+    rf95.setEncoding(DQN_SF_4096, DQN_CR_48, false);
+}
+
+void switch_fast(){
+    rf95.setEncoding(DQN_SF_128, DQN_CR_45);
+}
+
 void send_tr(){
     // TODO: use RSSI to determine the transmission rate
     // this is start of TR frame
@@ -256,7 +269,7 @@ void send_tr(){
 
     // switch to slower transmission rate
     // NOTE: this has 15 ms switching time
-    rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+    switch_oh();
 
     chosen_slot = random(0, DQN_M);
     uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_FRAME / DQN_M;
@@ -265,7 +278,7 @@ void send_tr(){
     device_sleep(sleep_time);
     struct dqn_tr tr;
     // requests for higher transmission rate
-    tr.rate = 1;
+    tr.rate = encode_rate(DQN_SF_128, DQN_CR_45, true);
     tr.num_slots = packet_size / DQN_MTU + 1;
 
     // calculate crc
@@ -297,7 +310,7 @@ void sync_time(bool use_loop){
     const uint32_t START_TIME = millis();
 
     // switch to slow transmission rate
-    rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc);
+    switch_oh();
 
     // wait for a feedback
     // and use the rssi to calibrate the actual time

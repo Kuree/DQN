@@ -76,10 +76,18 @@ uint32_t get_transmission_time(int8_t rssi){
     return (uint32_t)time;
 }
 
-int* get_rate_config(uint8_t rate, int *values){
+int* decode_rate(uint8_t rate, int *values){
     int cr = rate & DQN_CR_MASK;
     int sf = rate & DQN_SF_MASK;
-    values[0] = cr >> 4;
-    values[1] = sf;
+    values[0] = sf;
+    values[1] = cr >> 4;
+    values[2] = (rate & 0x80) == 0x80;
     return values;
+}
+
+uint8_t encode_rate(int sf, int cr, bool crc){
+   sf = sf & 0xF;
+   cr = cr & 7;
+   uint8_t c = crc? 1:0;
+   return (c << 7) | (cr << 4) | sf;
 }

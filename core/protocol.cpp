@@ -75,3 +75,11 @@ uint32_t get_transmission_time(int8_t rssi){
     double time = distance / 299792458 * 1000;
     return (uint32_t)time;
 }
+
+int* get_rate_config(uint8_t rate, int *values){
+    int cr = rate & DQN_CR_MASK;
+    int sf = rate & DQN_SF_MASK;
+    values[0] = cr >> 4;
+    values[1] = sf;
+    return values;
+}

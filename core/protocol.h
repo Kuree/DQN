@@ -19,6 +19,22 @@
 #define DQN_RATE_1 20524 
 #define DQN_ACK_LENGTH (DQN_N / 8 + 1)
 
+// define encodings
+#define DQN_SF_MASK 0x0F
+#define DQN_CR_MASK 0x70
+#define DQN_IMPLICIT_HEADER 0x80
+#define DQN_CR_45 1
+#define DQN_CR_46 2
+#define DQN_CR_47 3
+#define DQN_CR_48 4
+#define DQN_SF_64 6
+#define DQN_SF_128 7
+#define DQN_SF_256 8
+#define DQN_SF_512 9
+#define DQN_SF_1024 10
+#define DQN_SF_2048 11
+#define DQN_SF_4096 12
+
 #define FEEDBACK_TIME 280
 #define TR_TIME 215 
 
@@ -112,5 +128,9 @@ int receive_data(char* buffer);
 uint8_t get_crc8(char *data, int len);
 
 // returns in milli seconds
+// UNUSED
 uint32_t get_transmission_time(int8_t rssi);
+
+// passed in tutple pointer to save memory space
+int* get_rate_config(uint8_t rate, int* values);
 #endif

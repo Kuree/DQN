@@ -7,14 +7,14 @@
 #define DQN_LORA false
 #define DQN_ALOHA false
 
-#define DQN_M 4
+#define DQN_M 8
 #define DQN_N 16 // changed to a small number to make debug easier
 #define DQN_LENGTH 400
 #define DQN_DATA_LENGTH 100
 
-#define DQN_MINI_SLOT_LENGTH 200
+#define DQN_MINI_SLOT_LENGTH 215
 #define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH)
-#define DQN_OVERHEAD (1 + DQN_MINI_SLOT_FRAME / DQN_LENGTH)
+#define DQN_OVERHEAD (DQN_LENGTH + DQN_M * DQN_MINI_SLOT_LENGTH + DQN_GUARD)
 #define DQN_PREAMBLE 6
 #define DQN_FAST_RATE 20524 // TODO: build it into a table so that nodes can look it up 
 #define DQN_ACK_LENGTH (DQN_N / 8 + 1)
@@ -35,7 +35,7 @@
 #define DQN_SF_2048 11
 #define DQN_SF_4096 12
 
-#define FEEDBACK_TIME 280
+#define FEEDBACK_TIME 347
 #define TR_TIME 215 
 
 #define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program
@@ -51,7 +51,7 @@
 #define DQN_SENT 7
 
 #define DQN_MTU 255
-#define DQN_MAX_PACKET (DQN_MTU * DQN_N)
+#define DQN_MAX_PACKET (DQN_MTU * 20)
 
 #include <stdint.h>
 #include <stdbool.h>

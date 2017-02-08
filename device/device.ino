@@ -82,7 +82,8 @@ void setup() {
     Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
 
     // compute the feedback time
-    Serial.print("feedback packet transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
+    Serial.print("feedback size: "); Serial.print(sizeof(struct dqn_feedback));
+    Serial.print("bytes. transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
     Serial.print("DQN MTU: ");Serial.print(DQN_MTU);Serial.println();
 }
 
@@ -197,7 +198,7 @@ void dtq_send(){
             counter++;
             device_sleep(DQN_DATA_LENGTH + DQN_GUARD);
             if(counter == DQN_N) { // overhead block
-                device_sleep(DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD)); // TODO: fix overhead length
+                device_sleep(DQN_OVERHEAD); // TODO: fix overhead length
                 counter = 0;
             }
         } else { // need to transmit
@@ -214,7 +215,7 @@ void dtq_send(){
                 counter++;
                 while(millis() < start + DQN_DATA_LENGTH + DQN_GUARD); // sleep till next frame
                 if(counter == DQN_N){
-                    device_sleep(DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD)); // TODO: fix overhead length
+                    device_sleep(DQN_OVERHEAD); // TODO: fix overhead length
                     counter = 0;
                 }
             }
@@ -229,7 +230,7 @@ void crq_wait(){
     // we need to sleep through to the next frame. then compute how many time to sleep
     // notice that for crq, queue_sleep_time is for entire frames
     // TODO: test this
-    uint32_t sleep_time = (queue_sleep_time) * (DQN_OVERHEAD * (DQN_LENGTH + DQN_GUARD) + 
+    uint32_t sleep_time = (queue_sleep_time) * (DQN_OVERHEAD + 
         DQN_N *(DQN_DATA_LENGTH + DQN_GUARD)); // sleep time after the next frame
     queue_sleep_time = 0; // reset the queue sleep_time
     // we don't need to calibrate to the beginning of the frame for two reasons
@@ -267,7 +268,7 @@ void send_tr(){
     switch_oh();
 
     chosen_slot = random(0, DQN_M);
-    uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_FRAME / DQN_M;
+    uint32_t sleep_time = chosen_slot * DQN_MINI_SLOT_LENGTH;
     Serial.print("device choose mini-slot "); Serial.print(chosen_slot); 
     Serial.print(" sleep time "); Serial.print(sleep_time); Serial.println(" ms");
     device_sleep(sleep_time);
@@ -322,7 +323,7 @@ void sync_time(bool use_loop){
                 uint8_t packet_crc = get_crc8((char*)feedback, len);
                 if(crc == packet_crc){
                     // we got a feedback packet!!!!
-                    OFFSET = received_time - FEEDBACK_TIME; 
+                    OFFSET = received_time - FEEDBACK_TIME - DQN_GUARD / 2; // magic number 
                     Serial.print("offset set to ");
                     Serial.print(OFFSET);
                     Serial.print("\n");

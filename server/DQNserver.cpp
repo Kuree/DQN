@@ -115,6 +115,8 @@ int main (int argc, const char* argv[] ){
     printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
             DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
 
+    printf("feedback size %d\n", sizeof(struct dqn_feedback));
+
     uint8_t tr_results[DQN_M];
     // setup TR counter
     for(uint8_t i = 0; i < DQN_M; i++){
@@ -185,7 +187,7 @@ int main (int argc, const char* argv[] ){
         while(millis() < tr_start_time + DQN_MINI_SLOT_FRAME){
             if(rf95.available()){
                 uint32_t received_time = millis();
-                printf("got a TR packet\n");
+                //printf("got a TR packet\n");
                 uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
                 uint8_t len = sizeof(buf);
                 if (rf95.recv(buf, &len)){
@@ -199,12 +201,16 @@ int main (int argc, const char* argv[] ){
                     // heuristic fix the correctness of time_offset due to clock issues
                     if(time_offset < 0 and time_offset + DQN_GUARD > 0)
                         time_offset = 0;
-                    else if(time_offset < 0) {
+                    if(time_offset < 0) {
                         printf("device has synchronization error");
                     } else {
                         uint8_t mini_slot = time_offset / DQN_MINI_SLOT_LENGTH;
                         uint32_t slot_time_offset = time_offset % DQN_MINI_SLOT_LENGTH;
-                        printf("offset: %d requested mini slot %d offset %d\n", time_offset, 
+                        if(slot_time_offset + DQN_GUARD > DQN_MINI_SLOT_LENGTH){
+                            mini_slot++;
+                            slot_time_offset -= DQN_MINI_SLOT_LENGTH;
+                        }
+                        //printf("offset: %d requested mini slot %d offset %d\n", time_offset, 
                                 mini_slot, time_offset % DQN_MINI_SLOT_LENGTH);
                         // set the status of the mini slot 
                         if(packet_crc == crc){
@@ -243,8 +249,8 @@ int main (int argc, const char* argv[] ){
                         uint8_t len = sizeof(buf);
                         if (rf95.recv(buf, &len))
                         {
-                            printf("receiving data... size %d\n", len);
-                            print_packet(buf, len);
+                            //printf("receiving data... size %d\n", len);
+                            //print_packet(buf, len);
                             // turn on the ack bit
                             set_ack_bit(i, ack);
                         } else{
@@ -254,7 +260,7 @@ int main (int argc, const char* argv[] ){
 
                 }
             } else {
-                printf("dtq rates size %d\n", dtq_rates.size());
+                //printf("dtq rates size %d\n", dtq_rates.size());
                 int rate = dtq_rates.front();
                 dtq_rates.pop();
                 int values[3];
@@ -271,8 +277,8 @@ int main (int argc, const char* argv[] ){
                         uint8_t len = sizeof(buf);
                         if (rf95.recv(buf, &len))
                         {
-                            printf("receiving data... size %d\n", len);
-                            print_packet(buf, len);
+                            //printf("receiving data... size %d\n", len);
+                            //print_packet(buf, len);
                             set_ack_bit(i, ack);
                         } else{
                             printf("receiving failed\n");

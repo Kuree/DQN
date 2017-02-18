@@ -1,45 +1,31 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
-// define radio config
-#define LORA_HEADER 4
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
+// include the RF95
+#include <RH_RF95.h>
+#include <time.h>
 
-#define DQN_LORA false
-#define DQN_ALOHA false
+// define DQN parameters
+#define DQN_M 32
+#define DQN_N 128 // changed to a small number to make debug easier
 
-#define DQN_M 8
-#define DQN_N 16 // changed to a small number to make debug easier
-#define DQN_LENGTH 400
-#define DQN_DATA_LENGTH 100
-
-#define DQN_MINI_SLOT_LENGTH 215
+// define DQN timing
+#define DQN_GUARD 20
+#define DQN_MINI_SLOT_LENGTH 150
+#define DQN_FEEDBACK 412
+#define DQN_ACK_LENGTH 347
 #define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH)
-#define DQN_OVERHEAD (DQN_LENGTH + DQN_M * DQN_MINI_SLOT_LENGTH + DQN_GUARD)
+#define DQN_OVERHEAD (DQN_M * DQN_MINI_SLOT_LENGTH + DQN_GUARD * 3 + DQN_FEEDBACK + DQN_ACK_LENGTH)
 #define DQN_PREAMBLE 6
-#define DQN_FAST_RATE 20524 // TODO: build it into a table so that nodes can look it up 
-#define DQN_ACK_LENGTH (DQN_N / 8 + 1)
 
-// define encodings
-#define DQN_SF_MASK 0x0F
-#define DQN_CR_MASK 0x70
-#define DQN_IMPLICIT_HEADER 0x80
-#define DQN_CR_45 1
-#define DQN_CR_46 2
-#define DQN_CR_47 3
-#define DQN_CR_48 4
-#define DQN_SF_64 6
-#define DQN_SF_128 7
-#define DQN_SF_256 8
-#define DQN_SF_512 9
-#define DQN_SF_1024 10
-#define DQN_SF_2048 11
-#define DQN_SF_4096 12
+// define DQN encodings
+#define DQN_SLOW_CRC rf95.Bw500Cr48Sf4096HeaderCRC
+#define DQN_FAST_CRC rf95.Bw500Cr45Sf4096HeaderCRC
+#define DQN_SLOW_NOCRC rf95.Bw500Cr48Sf4096NoHeaderNoCRC
 
-#define FEEDBACK_TIME 347
-#define TR_TIME 215 
-
-#define DQN_RECV_WINDOW 12 // 12ms delay time. measured by echo program
-#define DQN_GUARD 15 // 15ms guard time this is used for frequency changing
 // device only
 #define DQN_IDLE 0
 #define DQN_SYNC 1
@@ -50,89 +36,92 @@
 #define DQN_ADJT 6
 #define DQN_SENT 7
 
-#define DQN_MTU 255
-#define DQN_MAX_PACKET (DQN_MTU * 20)
+// define DQN meta
+#define DQN_VERSION 				0x27
+#define DQN_MESSAGE_TR				0x80 // need to use mask
+#define DQN_MESSAGE_FEEDBACK 		0x01
+#define DQN_MESSAGE_TR_JOIN 		0x90 // need to use mask
+#define DQN_MESSAGE_JOIN_REQ		0xa0
+#define DQN_MESSAGE_JOIN_RESP		0xa1
+#define DQN_MESSAGE_MASK			0x0f
 
-#include <stdint.h>
-#include <stdbool.h>
 
+// define hardware information
+#define HW_ADDR_LENGTH      6
+
+// for testing only
+#define DQN_MTU 20
+#define DQN_MAX_PACKET (DQN_MTU * 4)
 
 struct dqn_tr{
-    // 1 byte
-    // NOTICE: we don't want to a device requests 0 data slots
-    uint8_t  	    num_slots;
-    // this defines which rate the device wants to transmit
-    uint8_t         rate; 
+    uint8_t         version;
+    uint8_t         messageid;
+    uint16_t        nodeid;  // upstream only. otherwise ignored
     // 1 byte
     uint8_t		    crc;
-} __attribute__((packed));  // total is 3 bytes
-
-
-// UNUSED
-struct dqn_data{
-    // 30 bytes
-    uint8_t     data[30];
-} __attribute__((packed));  // total is 30 bytes
+} __attribute__((packed));  // total is 5 bytes
 
 
 struct  dqn_feedback{
-    // 2 bytes
-    uint16_t        dtq_length;
-    // 2 bytes
+    uint8_t         version;
+    uint8_t         messageid;
+    uint32_t        networkid;
+    uint32_t        timestamp;
     uint16_t        crq_length;
-    uint8_t         slots[DQN_M];
-    uint8_t         ack[DQN_N / 8];
-    uint8_t         crc;
-} __attribute__((packed));  // total is 5  + DQN_M + DQN_N / 8 bytes
+    uint16_t        dtq_length;
+    uint16_t        data_length;
+    uint8_t         slots[DQN_M / 4];
+    //uint8_t         crc; let the radio to add this
+} __attribute__((packed));  // total is 24 bytes
+
+struct dqn_ack{
+    uint8_t         version;
+    uint8_t         messageid;
+    uint8_t         data_acks[DQN_N / 8];
+} __attribute__((packed));  // total is 18 bytes
+
+struct dqn_join_req{
+    uint8_t         version;
+    uint8_t         messageid;
+    uint8_t         hw_addr[HW_ADDR_LENGTH];
+} __attribute__((packed));  // total is 8 bytes
 
 
-/* Bloom filter usage in feedback slot
- * there are three status for a mini slot: idle, requested, contended:
- * for an idle slot, 0 is assigned;
- * for requested slot, the number of data slots in assigned, up to N;
- * for a contended slot, N+1 is assigned.
- * then the status of mini slot is appened to the slot number. To avoid
- * conflicts, mini slots are counted from 1 and padded 0 zeros before status code.
- * For instance, suppose N=16, mini slot 1 idle will be 1000, 
- * mini slot 2 contended will be 20017, and mini slot 3 requested 5 slots will
- * be 3005.
- *
- * After obtain a number, a hash function is applied to the number and hash to a bit position.
- * Thus it follows the Bloom filter
- *
- *
- * Once the device recieves the Bloom filter result, it will reverse the hashing process by trying
- * out all the possibilities to see if they're in the Bloom filter. 
- * For instance, it will try mini slot 1 idle, requested 1 slot, requested 2 slots, etc. 
- * Then it will use this information to reconstruct the original feedback information.
- * The runtime will be O(mN), where m is the number of mini slots and N will be number
- * of data slots.
- */
+struct dqn_join_resp{
+    uint8_t         version;
+    uint8_t         messageid;
+    uint8_t         hw_addr[HW_ADDR_LENGTH];
+    uint16_t        nodeid;
+} __attribute__((packed)); // total is 10 bytes
 
 
+struct dqn_feedback* make_feedback(
+        struct dqn_feedback* feedback,
+        uint32_t        networkid,
+        uint16_t        crq_length,
+        uint16_t        dtq_length,
+        uint8_t         *slots);
 
-// this is used to hash an integer value into
-// to create a new bloom filter, pass 0 as the hash_value to initialize it
-uint64_t bloom_hash(uint64_t hash_value, int value);
+struct dqn_tr* make_tr(
+        struct          dqn_tr* tr,
+        uint8_t         num_of_slots,
+        bool            high_rate,
+        uint16_t        nodeid);
 
-bool bloom_test(uint64_t hash_value, int value);
+struct dqn_tr* make_tr_join(
+        struct          dqn_tr* tr,
+        bool            high_rate);
 
-// used by the client
-void send_data(char* data);
+struct dqn_join_req* make_join_req(
+        struct dqn_join_req* req,
+        uint8_t         *hw_addr);
 
-// used by the server
-// may not be used
-int receive_data(char* buffer);
+struct dqn_join_resp* make_join_resp(
+         struct dqn_join_resp* resp,
+         uint8_t  *hw_addr,
+         uint16_t nodeid);
 
 // compute crc8
 uint8_t get_crc8(char *data, int len);
 
-// returns in milli seconds
-// UNUSED
-uint32_t get_transmission_time(int8_t rssi);
-
-// passed in tutple pointer to save memory space
-int* decode_rate(uint8_t rate, int* values);
-
-uint8_t encode_rate(int sf, int cr, bool crc);
 #endif

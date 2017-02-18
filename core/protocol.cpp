@@ -1,5 +1,4 @@
 #define BLOOM_SIZE 64
-#include <math.h>
 #include "protocol.h"
 
 // CRC8 implementation is adapted from 
@@ -10,34 +9,6 @@
 
 static unsigned char crc8_table[256];     /* 8-bit table */
 static int made_table=0;
-
-// function protocols here
-uint64_t hash(uint64_t);
-
-
-uint64_t bloom_hash(uint64_t hash_value, int value){
-    uint64_t hash_value_temp = hash(value);
-    return hash_value | (1 << (hash_value_temp % BLOOM_SIZE));	
-}
-
-
-bool bloom_test(uint64_t hash_value, int value){
-    uint64_t hash_value_temp = hash(value);
-    int bit_pos = hash_value_temp % BLOOM_SIZE;
-    return !(!(hash_value & (1 << bit_pos)));
-}
-
-// taken from http://stackoverflow.com/a/12996028
-uint64_t hash(uint64_t x) {
-    x = (x ^ (x >> 30)) * UINT64_C(0xbf58476d1ce4e5b9);
-    x = (x ^ (x >> 27)) * UINT64_C(0x94d049bb133111eb);
-    x = x ^ (x >> 31);
-    return x;
-}
-
-// this is a blocking method
-void send_data(char* data){
-}
 
 static void init_crc8(){
     if (!made_table) {
@@ -66,28 +37,65 @@ uint8_t get_crc8(char *data, int len){
     return crc;
 }
 
-uint32_t get_transmission_time(int8_t rssi){
-    // quick formula from http://electronics.stackexchange.com/a/83356
-    // assume it's free space
-    int a = 0; // TODO: calibrate this value
-    double raw = (rssi - a) / (-10);
-    double distance = pow(10, raw);
-    double time = distance / 299792458 * 1000;
-    return (uint32_t)time;
+
+struct dqn_feedback* make_feedback(
+        struct dqn_feedback* feedback, 
+        uint32_t networkid,
+        uint16_t crq_length,
+        uint16_t dtq_length,
+        uint8_t *slots){
+    feedback->version = DQN_VERSION;
+    feedback->messageid = DQN_MESSAGE_FEEDBACK;
+    feedback->timestamp = (uint32_t)time(NULL);
+    feedback->networkid = networkid;
+    feedback->crq_length = crq_length;
+    feedback->dtq_length = dtq_length;
+    memcpy(feedback->slots, slots, DQN_M / 4);
+    return feedback;
 }
 
-int* decode_rate(uint8_t rate, int *values){
-    int cr = rate & DQN_CR_MASK;
-    int sf = rate & DQN_SF_MASK;
-    values[0] = sf;
-    values[1] = cr >> 4;
-    values[2] = (rate & 0x80) == 0x80;
-    return values;
+struct dqn_tr* make_tr(
+        struct dqn_tr* tr, 
+        uint8_t num_of_slots,
+        bool high_rate,
+        uint16_t nodeid){
+    tr->version = DQN_VERSION;
+    tr->messageid = DQN_MESSAGE_TR | (DQN_MESSAGE_MASK & num_of_slots) | (high_rate << 2);
+    tr->nodeid = nodeid;
+    tr->crc = 0;
+    uint8_t crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
+    tr->crc = crc;
+    return tr;
 }
 
-uint8_t encode_rate(int sf, int cr, bool crc){
-   sf = sf & 0xF;
-   cr = cr & 7;
-   uint8_t c = crc? 1:0;
-   return (c << 7) | (cr << 4) | sf;
+struct dqn_tr* make_join_req(
+        struct dqn_tr* req,
+        bool high_rate){
+    req->version = DQN_VERSION;
+    req->messageid = DQN_MESSAGE_TR_JOIN | (DQN_MESSAGE_MASK & 2) | (high_rate << 2); 
+    req->nodeid = 0;
+    req->crc = 0;
+    uint8_t crc = get_crc8((char*)req, sizeof(struct dqn_join_req));
+    req->crc = crc;
+    return req;  
+}
+
+
+struct dqn_join_req* make_join_req(
+        struct dqn_join_req* req,
+        uint8_t *hw_addr){
+    req->version = DQN_VERSION;
+    req->messageid = DQN_MESSAGE_JOIN_REQ;
+    memcpy(req->hw_addr, hw_addr, HW_ADDR_LENGTH);
+    return req;
+}
+
+struct dqn_join_resp* make_join_resp(
+        struct dqn_join_resp* resp,
+        uint8_t  *hw_addr,
+        uint16_t nodeid){
+    resp->version = DQN_VERSION;
+    resp->nodeid = nodeid;
+    memcpy(resp->hw_addr, hw_addr, HW_ADDR_LENGTH);
+    return resp;
 }

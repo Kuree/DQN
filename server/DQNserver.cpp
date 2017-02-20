@@ -78,31 +78,7 @@ int main (int argc, const char* argv[] ){
     digitalWrite(TX_PIN, LOW);
     digitalWrite(RX_PIN, LOW);
 
-    if (!rf95.init()){
-        printf("rf95 init failed.\n");
-        exit(-95);
-    }else{
-        printf("rf95 init success.\n");
-    }
-    if (!rf95.setFrequency (915.0)){
-        printf("rf95 set freq failed.\n");
-        exit(-96);
-    }else{
-        printf("rf95 set freq to %5.2f.\n", 915.0);
-    }
-
-    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc)){
-        printf("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
-    }else{
-        printf("rf95 configuration failed.\n");
-        exit(-97);
-    }
-
-    // set the preamble
-    rf95.setPreambleLength(DQN_PREAMBLE);
-    printf("rf95 set preamble to %d\n", DQN_PREAMBLE);
-
-    rf95.setTxPower(23);
+    setup_radio(&rf95);
 
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
 

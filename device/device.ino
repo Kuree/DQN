@@ -53,37 +53,10 @@ void setup() {
 
     Serial.begin(57600);
     while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
-    if (!rf95.init()){
-        Serial.println("init failed");
-
-        while (1);
-    }
-    // Defaults after init are 434.0MHz, 13dBm, Bw = 125 kHz, Cr = 4/5, Sf = 128chips/symbol, CRC on
-    // Defaults after init are 434.0MHz, modulation GFSK_Rb250Fd250, +13dbM
-    if (!rf95.setFrequency(RF95_FREQ)) {
-        Serial.println("setFrequency failed"); 
-        while (1);
-    }
-    Serial.print("Set Freq to: "); Serial.println(RF95_FREQ);
-    // The default transmitter power is 13dBm, using PA_BOOST.
-    // If you are using RFM95/96/97/98 modules which uses the PA_BOOST transmitter pin, then 
-    // you can set transmitter powers from 5 to 23 dBm:
-    rf95.setTxPower(23);
-
-    if (rf95.setModemConfig(rf95.Bw500Cr48Sf4096NoCrc)){
-        Serial.println("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.");
-    } else{
-        Serial.println("rf95 configuration failed.");
-        while (1);
-    }
-
-    // setup the preamble
-    rf95.setPreambleLength(DQN_PREAMBLE);
-    Serial.print("Set preamble to "); Serial.println(DQN_PREAMBLE);
-
-    // compute the feedback time
+    
+    setup_radio(&rf95); 
+    
     Serial.print("feedback size: "); Serial.print(sizeof(struct dqn_feedback));
-    Serial.print("bytes. transmission time is "); Serial.print(FEEDBACK_TIME); Serial.println(" ms");
     Serial.print("DQN MTU: ");Serial.print(DQN_MTU);Serial.println();
 }
 

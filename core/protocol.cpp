@@ -1,6 +1,9 @@
 #define BLOOM_SIZE 64
 #include "protocol.h"
 
+
+#define MESSAGE_MAX 256
+
 // CRC8 implementation is adapted from 
 // http://www.rajivchakravorty.com/source-code/uncertainty/multimedia-sim/html/crc8_8c-source.html
 
@@ -98,4 +101,77 @@ struct dqn_join_resp* make_join_resp(
     resp->nodeid = nodeid;
     memcpy(resp->hw_addr, hw_addr, HW_ADDR_LENGTH);
     return resp;
+}
+
+
+void mprint(const char *format, ...){
+    va_list args;
+    va_start(args, format);
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+    char buf[MESSAGE_MAX];
+    vsnprintf(buf, MESSAGE_MAX, format, args);
+    Serial.print(buf);
+#else
+    vprintf(format, args);
+#endif
+}
+void dqn_send(RH_RF95 *rf95, void* data, size_t size){
+    if(!rf95->send((uint8_t *)data, sizeof(size))){
+        mprint("send failed");
+    }
+}
+
+uint8_t dqn_recv(
+        RH_RF95 *rf95, 
+        uint8_t* buf, 
+        uint32_t wait_time, 
+        RH_RF95::ModemConfigChoice rate,
+        uint32_t *received_time){
+    // set the config
+    rf95->setModemConfig(rate);
+    uint8_t len = 0;
+    uint32_t start = millis();
+    while(millis() < start + wait_time){
+        if(rf95->available()){
+            *received_time = millis();
+            if (!rf95->recv(buf, &len)){
+                mprint("receive failed");
+            }
+        }
+    }
+
+    return len;
+}
+
+RH_RF95* setup_radio(RH_RF95 *rf95){
+    if (!rf95->init()){
+        mprint("rf95 init failed.\n");
+        exit(-95);
+    }else{
+        mprint("rf95 init success.\n");
+    }
+    if (!rf95->setFrequency (915.0)){
+        mprint("rf95 set freq failed.\n");
+        exit(-96);
+    }else{
+        mprint("rf95 set freq to %5.2f.\n", 915.0);
+    }
+
+    if (rf95->setModemConfig(rf95->Bw500Cr48Sf4096NoCrc)){
+        mprint("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
+    }else{
+        mprint("rf95 configuration failed.\n");
+        exit(-97);
+    }
+
+    // set the preamble
+    rf95->setPreambleLength(DQN_PREAMBLE);
+    printf("rf95 set preamble to %d\n", DQN_PREAMBLE);
+
+    rf95->setTxPower(23);
+
+    rf95->setPreambleLength(DQN_PREAMBLE);
+    mprint("Set premable to %d\n", DQN_PREAMBLE);
+
+    return rf95;
 }

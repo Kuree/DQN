@@ -7,6 +7,7 @@
 // include the RF95
 #include <RH_RF95.h>
 #include <time.h>
+#include <stdarg.h>
 
 // define DQN parameters
 #define DQN_M 32
@@ -117,11 +118,31 @@ struct dqn_join_req* make_join_req(
         uint8_t         *hw_addr);
 
 struct dqn_join_resp* make_join_resp(
-         struct dqn_join_resp* resp,
-         uint8_t  *hw_addr,
-         uint16_t nodeid);
+        struct dqn_join_resp* resp,
+        uint8_t  *hw_addr,
+        uint16_t nodeid);
+
+
+void dqn_send(RH_RF95 *rf95, 
+        void* data, 
+        size_t size);
+
+uint8_t dqn_recv(RH_RF95 *rf95, 
+        uint8_t* buf, 
+        uint32_t wait_time, 
+        RH_RF95::ModemConfigChoice choice,
+        uint32_t received_time);
+
+RH_RF95* setup_radio(RH_RF95 *rf95);
 
 // compute crc8
 uint8_t get_crc8(char *data, int len);
+
+// message printing
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+void mprint(const char *format, ...);
+#endif
+
+
 
 #endif

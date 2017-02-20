@@ -115,7 +115,7 @@ void mprint(const char *format, ...){
     vprintf(format, args);
 #endif
 }
-void dqn_send(RH_RF95 *rf95, void* data, size_t size){
+void dqn_send(RH_RF95 *rf95, const void* data, size_t size){
     if(!rf95->send((uint8_t *)data, sizeof(size))){
         mprint("send failed");
     }
@@ -125,15 +125,17 @@ uint8_t dqn_recv(
         RH_RF95 *rf95, 
         uint8_t* buf, 
         uint32_t wait_time, 
-        RH_RF95::ModemConfigChoice rate,
+        RH_RF95::ModemConfigChoice *rate,
         uint32_t *received_time){
     // set the config
-    rf95->setModemConfig(rate);
+    if(rate != NULL)
+        rf95->setModemConfig(*rate);
     uint8_t len = 0;
     uint32_t start = millis();
     while(millis() < start + wait_time){
         if(rf95->available()){
-            *received_time = millis();
+            if(received_time != NULL)
+                *received_time = millis();
             if (!rf95->recv(buf, &len)){
                 mprint("receive failed");
             }
@@ -141,6 +143,13 @@ uint8_t dqn_recv(
     }
 
     return len;
+}
+
+uint8_t dqn_recv(
+        RH_RF95 *rf95,
+        uint8_t* buf,
+        uint32_t wait_time){
+    return dqn_recv(rf95, buf, wait_time, NULL, NULL);
 }
 
 RH_RF95* setup_radio(RH_RF95 *rf95){
@@ -174,4 +183,32 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
     mprint("Set premable to %d\n", DQN_PREAMBLE);
 
     return rf95;
+}
+
+
+void RadioDevice::send(const void* msg, size_t size){
+    dqn_send(&(this->rf95), msg, size);
+}
+
+uint8_t RadioDevice::recv(uint32_t wait_time){
+    return dqn_recv(&(this->rf95), this->recv_buf, wait_time);
+}
+
+uint8_t RadioDevice::recv(uint32_t wait_time, uint32_t *received_time){
+    return dqn_recv(&(this->rf95), this->recv_buf, wait_time, NULL, received_time);
+} 
+
+uint8_t RadioDevice::recv(
+        uint32_t wait_time,
+        RH_RF95::ModemConfigChoice *rate,
+        uint32_t *received_time){
+     return dqn_recv(&(this->rf95), this->recv_buf, wait_time, rate, received_time);
+}
+
+void RadioDevice::setup(RadioDevice* device){
+    setup_radio(&(device->rf95));
+}
+
+RadioDevice::RadioDevice(){
+    setup_radio(&(this->rf95));
 }

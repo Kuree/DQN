@@ -164,7 +164,7 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
     while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
 #else
     wiringPiSetup();
-	/* Begin Driver Only Init Code */
+    /* Begin Driver Only Init Code */
     pinMode(RF95_RESET_PIN, OUTPUT);
     pinMode(TX_PIN, OUTPUT);
     pinMode(RX_PIN, OUTPUT);
@@ -238,9 +238,30 @@ uint8_t RadioDevice::recv(
 
 void RadioDevice::setup(){
 #if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
-		this->rf95 = new RH_RF95(RFM95_CS, RFM95_INT);
+    this->rf95 = new RH_RF95(RFM95_CS, RFM95_INT);
 #else
-        this->rf95 = new RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
+    this->rf95 = new RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
 #endif
     setup_radio(this->rf95);
+}
+
+
+Node::Node(){
+    this->setup();
+}
+
+Server::Server(uint32_t networkid,
+        void (*on_receive)(uint8_t*, size_t),
+        void (*on_download)(uint8_t*, uint8_t*, size_t*)){
+    this->networkid = networkid;
+    this->on_receive = on_receive;
+    this->on_download = on_download;
+    
+    this->crq = 0;
+}
+
+void Server::run(){
+    while(true){
+    
+    }
 }

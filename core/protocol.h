@@ -8,6 +8,9 @@
 #include <RH_RF95.h>
 #include <time.h>
 #include <stdarg.h>
+#if (RH_PLATFORM != RH_PLATFORM_ARDUINO)
+#include <queue>
+#endif
 
 // define DQN parameters
 #define DQN_M 32
@@ -165,10 +168,7 @@ RH_RF95* setup_radio(RH_RF95 *rf95);
 uint8_t get_crc8(char *data, int len);
 
 // message printing
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
 void mprint(const char *format, ...);
-#endif
-
 
 
 
@@ -178,10 +178,11 @@ class RadioDevice{
 	protected:
 		// how long each data slot is
 		uint16_t data_length;
-		uint8_t recv_buf[255];
         RH_RF95 *rf95;
-	public:
-		void send(const void* msg, size_t size);
+        uint8_t hw_addr[HW_ADDR_LENGTH];
+		uint8_t recv_buf[255];
+        
+        void send(const void* msg, size_t size);
 		uint8_t recv(uint32_t wait_time);
 		uint8_t recv(
 				uint32_t wait_time,  
@@ -190,7 +191,52 @@ class RadioDevice{
 		uint8_t recv(                                    
 				uint32_t wait_time, 
 				uint32_t *received_timed);
-        void setup();
+
+	public:
+		void setup();
+        void set_hw_addr(const uint8_t *hw_addr);
+};
+
+
+class Node: public RadioDevice{
+    private:
+        uint32_t time_offset;
+        uint16_t node_id = 0;
+        bool has_sync = false;
+        uint32_t last_sync_time;
+        bool fast_rate = false;
+        
+        void sync();
+        void sleep(uint32_t sleep_time);
+        void determine_rate();
+    public:
+        Node();
+        uint32_t receive_feedback(struct dqn_feedback *feedback);
+        uint32_t send();
+        uint32_t send(bool *ack);
+        void add_data_queue(void *data, size_t size);
+        void request_nodeid();
+        uint32_t recv();
+};
+
+class Server: public RadioDevice{
+    private:
+        uint32_t networkid;
+        uint32_t crq;
+        // DTQ needs to be implementaed in queue
+
+        // function call backs
+        void (*on_receive)(uint8_t *data, size_t size);
+        void (*on_download)(uint8_t *hw_addr, uint8_t *data, size_t *size);
+        
+        void send_feedback();
+
+    public:
+        Server(uint32_t, 
+                void (*on_receive)(uint8_t*, size_t), 
+                void (*on_download)(uint8_t*, uint8_t*, size_t*));
+        // this is a blocking method
+        void run();
 };
 
 #endif

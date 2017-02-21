@@ -125,31 +125,43 @@ uint8_t dqn_recv(
         RH_RF95 *rf95, 
         uint8_t* buf, 
         uint32_t wait_time, 
-        RH_RF95::ModemConfigChoice *rate,
+        RH_RF95::ModemConfigChoice rate,
         uint32_t *received_time){
     // set the config
-    if(rate != NULL)
-        rf95->setModemConfig(*rate);
+    rf95->setModemConfig(rate);
+    return dqn_recv(rf95, buf, wait_time, received_time);
+}
+
+uint8_t dqn_recv(
+        RH_RF95 *rf95, 
+        uint8_t* buf, 
+        uint32_t wait_time, 
+        uint32_t *received_time){
     uint8_t len = 0;
     uint32_t start = millis();
-    while(millis() < start + wait_time){
+    bool indefinite_loop = wait_time == 0;
+    while(millis() < start + wait_time || indefinite_loop){
         if(rf95->available()){
             if(received_time != NULL)
                 *received_time = millis();
             if (!rf95->recv(buf, &len)){
                 mprint("receive failed");
             }
+            if(indefinite_loop)
+                return len; // end the loop
         }
     }
 
     return len;
 }
 
+
+
 uint8_t dqn_recv(
         RH_RF95 *rf95,
         uint8_t* buf,
         uint32_t wait_time){
-    return dqn_recv(rf95, buf, wait_time, NULL, NULL);
+    return dqn_recv(rf95, buf, wait_time, NULL);
 }
 
 RH_RF95* setup_radio(RH_RF95 *rf95){
@@ -226,12 +238,12 @@ uint8_t RadioDevice::recv(uint32_t wait_time){
 }
 
 uint8_t RadioDevice::recv(uint32_t wait_time, uint32_t *received_time){
-    return dqn_recv(this->rf95, this->recv_buf, wait_time, NULL, received_time);
+    return dqn_recv(this->rf95, this->recv_buf, wait_time, received_time);
 } 
 
 uint8_t RadioDevice::recv(
         uint32_t wait_time,
-        RH_RF95::ModemConfigChoice *rate,
+        RH_RF95::ModemConfigChoice rate,
         uint32_t *received_time){
     return dqn_recv(this->rf95, this->recv_buf, wait_time, rate, received_time);
 }
@@ -246,8 +258,52 @@ void RadioDevice::setup(){
 }
 
 
-Node::Node(){
+void RadioDevice::parse_frame_param(struct dqn_feedback *feedback){
+    uint16_t frame_param = feedback->frame_param;
+    
+}
+
+uint16_t radioDevice::get_frame_param(){
+    uint16_t result = 0;
+}
+
+
+void Node::ctor(uint8_t *hw_addr){
     this->setup();
+    memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
+}
+
+Node::Node(uint8_t *hw_addr){
+    this->ctor(hw_addr);
+}
+
+Node::Node(){
+   uint8_t hw_addr[HW_ADDR_LENGTH] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47};
+   this->ctor(hw_addr);
+} 
+
+void Node::sync(){
+    // continuously listening till a valid feedbac is received
+    while(true){
+        // trying to receive any packet
+        uint8_t buf[255];
+        uint32_t received_time;
+        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        // check if it is a valid feedback package
+        if(len == sizeof(struct dqn_feedback)){
+            struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
+            if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
+                // we find the actual feedback
+                // now we need to compute the offset
+                this->time_offset = received_time - DQN_FEEDBACK;
+                this->parse_frame_param(feedback);
+                break;
+            }
+        }
+    }
+
+    this->last_sync_time = millis();
+    this->has_sync = true;
 }
 
 Server::Server(uint32_t networkid,

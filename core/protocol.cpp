@@ -153,13 +153,44 @@ uint8_t dqn_recv(
 }
 
 RH_RF95* setup_radio(RH_RF95 *rf95){
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+    pinMode(VBATPIN, INPUT);
+
+    // un-reset the radio
+    pinMode(RFM95_RST, OUTPUT);
+    digitalWrite(RFM95_RST, HIGH);
+
+    Serial.begin(57600);
+    while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
+#else
+    wiringPiSetup();
+	/* Begin Driver Only Init Code */
+    pinMode(RF95_RESET_PIN, OUTPUT);
+    pinMode(TX_PIN, OUTPUT);
+    pinMode(RX_PIN, OUTPUT);
+    digitalWrite(TX_PIN, HIGH);
+    digitalWrite(RX_PIN, HIGH);
+
+    digitalWrite(RF95_RESET_PIN, HIGH);
+    delay(50);
+    digitalWrite(RF95_RESET_PIN, LOW);
+    delay(50);
+    digitalWrite(RF95_RESET_PIN, HIGH);
+    delay(50);
+
+    printf("Reset high, waiting 1 sec.\n");
+    delay(1000);
+
+    digitalWrite(TX_PIN, LOW);
+    digitalWrite(RX_PIN, LOW);
+#endif
     if (!rf95->init()){
         mprint("rf95 init failed.\n");
         exit(-95);
     }else{
         mprint("rf95 init success.\n");
     }
-    if (!rf95->setFrequency (915.0)){
+    if (!rf95->setFrequency (RF95_FREQ)){
         mprint("rf95 set freq failed.\n");
         exit(-96);
     }else{
@@ -187,28 +218,29 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
 
 
 void RadioDevice::send(const void* msg, size_t size){
-    dqn_send(&(this->rf95), msg, size);
+    dqn_send(this->rf95, msg, size);
 }
 
 uint8_t RadioDevice::recv(uint32_t wait_time){
-    return dqn_recv(&(this->rf95), this->recv_buf, wait_time);
+    return dqn_recv(this->rf95, this->recv_buf, wait_time);
 }
 
 uint8_t RadioDevice::recv(uint32_t wait_time, uint32_t *received_time){
-    return dqn_recv(&(this->rf95), this->recv_buf, wait_time, NULL, received_time);
+    return dqn_recv(this->rf95, this->recv_buf, wait_time, NULL, received_time);
 } 
 
 uint8_t RadioDevice::recv(
         uint32_t wait_time,
         RH_RF95::ModemConfigChoice *rate,
         uint32_t *received_time){
-     return dqn_recv(&(this->rf95), this->recv_buf, wait_time, rate, received_time);
+    return dqn_recv(this->rf95, this->recv_buf, wait_time, rate, received_time);
 }
 
-void RadioDevice::setup(RadioDevice* device){
-    setup_radio(&(device->rf95));
-}
-
-RadioDevice::RadioDevice(){
-    setup_radio(&(this->rf95));
+void RadioDevice::setup(){
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+		this->rf95 = new RH_RF95(RFM95_CS, RFM95_INT);
+#else
+        this->rf95 = new RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
+#endif
+    setup_radio(this->rf95);
 }

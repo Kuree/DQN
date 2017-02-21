@@ -54,30 +54,6 @@ volatile sig_atomic_t flag = 0;
 int main (int argc, const char* argv[] ){
     signal(SIGINT, sig_handler);
 
-    wiringPiSetup();
-
-    printf( "\nFeedback delay %d ms\n\n", FEEDBACK_TIME);
-
-    /* Begin Driver Only Init Code */
-    pinMode(RF95_RESET_PIN, OUTPUT);
-    pinMode(TX_PIN, OUTPUT);
-    pinMode(RX_PIN, OUTPUT);
-    digitalWrite(TX_PIN, HIGH);
-    digitalWrite(RX_PIN, HIGH);
-
-    digitalWrite(RF95_RESET_PIN, HIGH);
-    delay(50);
-    digitalWrite(RF95_RESET_PIN, LOW);
-    delay(50);
-    digitalWrite(RF95_RESET_PIN, HIGH);
-    delay(50);
-
-    printf("Reset high, waiting 1 sec.\n");
-    delay(1000);
-
-    digitalWrite(TX_PIN, LOW);
-    digitalWrite(RX_PIN, LOW);
-
     setup_radio(&rf95);
 
     uint8_t buf[RH_RF95_MAX_MESSAGE_LEN];
@@ -88,10 +64,6 @@ int main (int argc, const char* argv[] ){
     uint8_t  ack[DQN_ACK_LENGTH];
     
 
-    printf("DQN mini slot frame size %d mini slot size: %d DQN overhead: %d TR time: %d\n", 
-            DQN_MINI_SLOT_FRAME, DQN_MINI_SLOT_LENGTH, DQN_OVERHEAD, TR_TIME);
-
-    printf("feedback size %d\n", sizeof(struct dqn_feedback));
 
     uint8_t tr_results[DQN_M];
     // setup TR counter

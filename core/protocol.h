@@ -50,6 +50,24 @@
 // define hardware information
 #define HW_ADDR_LENGTH      6
 
+// radio configuration
+// arduino
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#define RFM95_CS 8
+#define RFM95_RST 4
+#define RFM95_INT 3
+#define RF95_FREQ 915.0
+#define VBATPIN A7 
+#endif
+
+// raspberry pi
+#define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
+#define RF95_INT_PIN 7    // this is BCM pin 4, physical pin 7.
+#define RF95_CS_PIN 10    // this is BCM pin 8, physical pin 24
+// wiringPi pin numbers
+#define TX_PIN 4
+#define RX_PIN 5
+
 // for testing only
 #define DQN_MTU 20
 #define DQN_MAX_PACKET (DQN_MTU * 4)
@@ -161,7 +179,7 @@ class RadioDevice{
 		// how long each data slot is
 		uint16_t data_length;
 		uint8_t recv_buf[255];
-		RH_RF95 rf95;
+        RH_RF95 *rf95;
 	public:
 		void send(const void* msg, size_t size);
 		uint8_t recv(uint32_t wait_time);
@@ -172,8 +190,7 @@ class RadioDevice{
 		uint8_t recv(                                    
 				uint32_t wait_time, 
 				uint32_t *received_timed);
-        static void setup(RadioDevice* device);
-		RadioDevice();
+        void setup();
 };
 
 #endif

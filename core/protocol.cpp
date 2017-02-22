@@ -258,13 +258,27 @@ void RadioDevice::setup(){
 }
 
 
-void RadioDevice::parse_frame_param(struct dqn_feedback *feedback){
+void RadioDevice::parse_frame_param(struct dqn_feedback *feedback, uint16_t *trf){
     uint16_t frame_param = feedback->frame_param;
-    
+    *trf = 2 << (15 - frame_param & 0xF);
+    this->data_length = 1 << ((frame_param >> 4) & 0xF);
+    uint8_t raw_ratio = (frame_param >> 8) & 0xF;
+    float ratio = (float)raw_ratio / 15.0;
+    // TODO:
+    // finish the implementaion once it's finalized.
 }
 
-uint16_t radioDevice::get_frame_param(){
+uint16_t RadioDevice::get_frame_param(){
     uint16_t result = 0;
+    uint8_t num_tr = this->get_power(this->trf);
+    result |= num_tr & 0xF;
+    // TODO:
+    // finish the implementaion once it's finalized.
+}
+
+uint8_t RadioDevice::get_power(uint32_t number){
+    // use GCC builtin function
+    return 31 - __builtin_clz(number);
 }
 
 
@@ -290,13 +304,16 @@ void Node::sync(){
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         // check if it is a valid feedback package
-        if(len == sizeof(struct dqn_feedback)){
             struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
-            if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
-                // we find the actual feedback
-                // now we need to compute the offset
+        if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
+            // we find the actual feedback
+            // now we need to compute the offset
+            // this is not enough!! need to check if the slot size is correct as well
+            uint16_t slots_counts = (len - 16) * 4; // TODO: replace it with predefined constant
+            uint16_t trf;
+            this->parse_frame_param(feedback, &trf);
+            if(trf == slots_counts){
                 this->time_offset = received_time - DQN_FEEDBACK;
-                this->parse_frame_param(feedback);
                 break;
             }
         }
@@ -304,6 +321,47 @@ void Node::sync(){
 
     this->last_sync_time = millis();
     this->has_sync = true;
+}
+
+
+void Node::check_sync(){
+    if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync)
+        this->sync();
+    // determine the starting time for the upcoming frame
+    uint32_t time_diff = millis() - this->time_offset;
+    // TODO:
+    // finish the sleep after the frame structure is finalized.
+}
+
+uint32_t Node::send(){
+    return this->send(NULL);
+}
+
+uint32_t Node::send(bool *ack){
+    // TODO switched to queue
+    this->check_sync();
+    uint16_t chosen_mini_slot = rand() % this->trf;
+    this->sleep(chosen_mini_slot * DQN_MINI_SLOT_LENGTH);
+    // send a TR request
+    
+    // see if we need to listen to ack
+    if(ack != NULL){
+    
+    
+    }
+    
+    return 0; 
+}
+
+bool Node::determine_rate(){
+    
+}
+
+void Node::sleep(uint32_t time){
+    uint32_t start = millis();
+    while(millis() < start + time);
+    // TODO:
+    // switch to more efficient way to put device into sleep
 }
 
 Server::Server(uint32_t networkid,

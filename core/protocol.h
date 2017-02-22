@@ -8,7 +8,11 @@
 #include <RH_RF95.h>
 #include <time.h>
 #include <stdarg.h>
-#if (RH_PLATFORM != RH_PLATFORM_ARDUINO)
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#undef max      // Arduino toolchain will report error if standard max macro is around
+#undef min
+#include <queue.h>
+#else
 #include <queue>
 #endif
 
@@ -49,6 +53,8 @@
 #define DQN_MESSAGE_JOIN_RESP       0xa1
 #define DQN_MESSAGE_MASK            0x0f
 
+// define sync
+#define DQN_SYNC_INTERVAL           36000000    // 10 hours
 
 // define hardware information
 #define HW_ADDR_LENGTH      6
@@ -85,15 +91,14 @@ struct dqn_tr{
 
 
 struct  dqn_feedback{
-    uint8_t         version;
-    uint8_t         messageid;
-    uint32_t        networkid;
-    uint32_t        timestamp;
-    uint16_t        crq_length;
-    uint16_t        dtq_length;
-    uint16_t        frame_param;
-    uint8_t         slots[DQN_M / 4];
-    //uint8_t         crc; let the radio to add this
+    uint8_t         version;        // 1
+    uint8_t         messageid;      // 1
+    uint32_t        networkid;      // 4
+    uint32_t        timestamp;      // 4
+    uint16_t        crq_length;     // 2
+    uint16_t        dtq_length;     // 2
+    uint16_t        frame_param;    // 2
+    uint8_t         slots[DQN_M / 4]; // this is not accurate for node 
 } __attribute__((packed));  // total is 24 bytes
 
 struct dqn_ack{
@@ -181,14 +186,16 @@ void mprint(const char *format, ...);
 // defining the base class for both server and device
 // a base class wrapper for all DQN methods
 class RadioDevice{
+    private:
+        uint8_t get_power(uint32_t number);
     protected:
         // how long each data slot is
         uint16_t data_length;
         RH_RF95 *rf95;
         uint8_t hw_addr[HW_ADDR_LENGTH];
         uint8_t recv_buf[255];
-        uint32_t num_tr;
-        uint32_t num_data_slot;
+        uint16_t trf;
+        uint16_t num_data_slot;
 
         void send(const void* msg, size_t size);
         uint8_t recv(uint32_t wait_time);
@@ -199,10 +206,13 @@ class RadioDevice{
         uint8_t recv(                                    
                 uint32_t wait_time, 
                 uint32_t *received_timed);
-
+        void parse_frame_param(
+                struct dqn_feedback *feedback,
+                uint16_t *trf);
     public:
         void setup();
         void set_hw_addr(const uint8_t *hw_addr);
+        uint16_t get_frame_param();
 };
 
 
@@ -215,8 +225,8 @@ class Node: public RadioDevice{
         bool fast_rate = false;
         
         void sync();
-        void sleep(uint32_t sleep_time);
-        void determine_rate();
+        void check_sync();
+        bool determine_rate();
 
         // old C++ doesn't have delegating constructors
         // I miss C#
@@ -231,6 +241,7 @@ class Node: public RadioDevice{
         void add_data_queue(void *data, size_t size);
         void request_nodeid();
         uint32_t recv();
+        void sleep(uint32_t time);
 };
 
 class Server: public RadioDevice{

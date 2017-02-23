@@ -41,7 +41,7 @@ uint8_t get_crc8(char *data, int len){
 }
 
 
-struct dqn_feedback* make_feedback(
+struct dqn_feedback* dqn_make_feedback(
         struct dqn_feedback* feedback, 
         uint32_t networkid,
         uint16_t crq_length,
@@ -57,7 +57,7 @@ struct dqn_feedback* make_feedback(
     return feedback;
 }
 
-struct dqn_tr* make_tr(
+struct dqn_tr* dqn_make_tr(
         struct dqn_tr* tr, 
         uint8_t num_of_slots,
         bool high_rate,
@@ -71,7 +71,7 @@ struct dqn_tr* make_tr(
     return tr;
 }
 
-struct dqn_tr* make_join_req(
+struct dqn_tr* dqn_make_join_req(
         struct dqn_tr* req,
         bool high_rate){
     req->version = DQN_VERSION;
@@ -84,7 +84,7 @@ struct dqn_tr* make_join_req(
 }
 
 
-struct dqn_join_req* make_join_req(
+struct dqn_join_req* dqn_make_join_req(
         struct dqn_join_req* req,
         uint8_t *hw_addr){
     req->version = DQN_VERSION;
@@ -93,7 +93,7 @@ struct dqn_join_req* make_join_req(
     return req;
 }
 
-struct dqn_join_resp* make_join_resp(
+struct dqn_join_resp* dqn_make_join_resp(
         struct dqn_join_resp* resp,
         uint8_t  *hw_addr,
         uint16_t nodeid){
@@ -119,6 +119,15 @@ void dqn_send(RH_RF95 *rf95, const void* data, size_t size){
     if(!rf95->send((uint8_t *)data, sizeof(size))){
         mprint("send failed");
     }
+}
+
+void dqn_send(
+        RH_RF95 *rf95, 
+        const void* data, 
+        size_t size,
+        RH_RF95::ModemConfigChoice choice){
+    rf95->setModemConfig(choice);
+    dqn_send(rf95, data, size);
 }
 
 uint8_t dqn_recv(
@@ -228,26 +237,6 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
     return rf95;
 }
 
-
-void RadioDevice::send(const void* msg, size_t size){
-    dqn_send(this->rf95, msg, size);
-}
-
-uint8_t RadioDevice::recv(uint32_t wait_time){
-    return dqn_recv(this->rf95, this->recv_buf, wait_time);
-}
-
-uint8_t RadioDevice::recv(uint32_t wait_time, uint32_t *received_time){
-    return dqn_recv(this->rf95, this->recv_buf, wait_time, received_time);
-} 
-
-uint8_t RadioDevice::recv(
-        uint32_t wait_time,
-        RH_RF95::ModemConfigChoice rate,
-        uint32_t *received_time){
-    return dqn_recv(this->rf95, this->recv_buf, wait_time, rate, received_time);
-}
-
 void RadioDevice::setup(){
 #if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
     this->rf95 = new RH_RF95(RFM95_CS, RFM95_INT);
@@ -338,23 +327,56 @@ uint32_t Node::send(){
 }
 
 uint32_t Node::send(bool *ack){
-    // TODO switched to queue
-    this->check_sync();
-    uint16_t chosen_mini_slot = rand() % this->trf;
-    this->sleep(chosen_mini_slot * DQN_MINI_SLOT_LENGTH);
-    // send a TR request
-    
-    // see if we need to listen to ack
-    if(ack != NULL){
-    
-    
+    while(true){
+        // TODO switched to queue
+        this->check_sync();
+        uint32_t frame_start = millis();
+        uint16_t chosen_mini_slot = rand() % this->trf;
+        // send a TR request
+        struct dqn_tr tr;
+        dqn_make_tr(&tr, 4, this->determine_rate(), this->nodeid);
+        // sleep at the last to ensure the timing 
+        this->sleep(frame_start + chosen_mini_slot * DQN_MINI_SLOT_LENGTH - millis());
+        dqn_send(this->rf95, (uint8_t*)&tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
+        
+        // wait to see the feedback result
+        uint32_t total_tr_time = DQN_MINI_SLOT_LENGTH * this->trf;
+        uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
+        this->sleep(feedback_start_time - millis());
+
+        // receive feedback.
+        uint8_t buf[255];
+        dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
+        if(feedback->version != DQN_VERSION && feedback->messageid != DQN_MESSAGE_FEEDBACK){
+            // somehow it's wrong
+            mprint("redeived non-feedback packet\n");
+            continue;
+        }
+        // scan the TR results
+        uint16_t dtq = feedback->dtq_length;
+        for(int i = 0; i < self->trq; i++){
+            uint8_t status;
+            if(i % 2)
+                status = feedback->slots[i/2] & 0x3;
+            else
+                status = feedback->slots[i/2] >>
+        }
+        // see if we need to listen to ack
+        if(ack != NULL){
+        
+        
+        }
+        
+        return 0; 
     }
-    
-    return 0; 
 }
 
 bool Node::determine_rate(){
-    
+    // TODO:
+    // fix this rate
+    int rssi = this->rf95->lastRssi();
+    return rssi >= -10;
 }
 
 void Node::sleep(uint32_t time){

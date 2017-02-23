@@ -8,12 +8,16 @@
 #include <RH_RF95.h>
 #include <time.h>
 #include <stdarg.h>
+#include <stdlib.h>
+
 #if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
 #undef max      // Arduino toolchain will report error if standard max macro is around
 #undef min
 #include <queue.h>
+using namespace etl;
 #else
 #include <queue>
+using namespace std;
 #endif
 
 // define DQN parameters
@@ -21,7 +25,7 @@
 #define DQN_N 128 // changed to a small number to make debug easier
 
 // define DQN timing
-#define DQN_GUARD 20
+#define DQN_GUARD 15
 #define DQN_MINI_SLOT_LENGTH 150
 #define DQN_FEEDBACK 412
 #define DQN_ACK_LENGTH 347
@@ -32,7 +36,7 @@
 // define DQN encodings
 #define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
 #define DQN_FAST_CRC rf95->Bw500Cr45Sf4096HeaderCRC
-#define DQN_SLOW_NOCRC rf95->Bw500Cr48Sf4096NoHeadNoCrc
+#define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
 
 // device only
 #define DQN_IDLE 0
@@ -76,6 +80,10 @@
 // wiringPi pin numbers
 #define TX_PIN 4
 #define RX_PIN 5
+
+
+// limitation of arduino-based server
+#define DQN_DEVICE_QUEUE_SIZE 255 
 
 // for testing only
 #define DQN_MTU 20
@@ -122,28 +130,37 @@ struct dqn_join_resp{
 } __attribute__((packed)); // total is 10 bytes
 
 
-struct dqn_feedback* make_feedback(
+
+struct dqn_data_request{
+    // this is only used by server
+    // assume that it is pretty good memory management
+    //
+    uint8_t messageid;
+    uint16_t nodeid;
+};
+
+struct dqn_feedback* dqn_make_feedback(
         struct dqn_feedback* feedback,
         uint32_t        networkid,
         uint16_t        crq_length,
         uint16_t        dtq_length,
         uint8_t         *slots);
 
-struct dqn_tr* make_tr(
+struct dqn_tr* dqn_make_tr(
         struct          dqn_tr* tr,
         uint8_t         num_of_slots,
         bool            high_rate,
         uint16_t        nodeid);
 
-struct dqn_tr* make_tr_join(
+struct dqn_tr* dqn_make_tr_join(
         struct          dqn_tr* tr,
         bool            high_rate);
 
-struct dqn_join_req* make_join_req(
+struct dqn_join_req* dqn_make_join_req(
         struct dqn_join_req* req,
         uint8_t         *hw_addr);
 
-struct dqn_join_resp* make_join_resp(
+struct dqn_join_resp* dqn_make_join_resp(
         struct dqn_join_resp* resp,
         uint8_t  *hw_addr,
         uint16_t nodeid);
@@ -153,6 +170,12 @@ void dqn_send(
         RH_RF95 *rf95, 
         const void* data, 
         size_t size);
+
+void dqn_send(
+        RH_RF95 *rf95,
+        const void* data,
+        size_t size,
+        RH_RF95::ModemConfigChoice choice);
 
 uint8_t dqn_recv(
         RH_RF95 *rf95, 
@@ -197,15 +220,6 @@ class RadioDevice{
         uint16_t trf;
         uint16_t num_data_slot;
 
-        void send(const void* msg, size_t size);
-        uint8_t recv(uint32_t wait_time);
-        uint8_t recv(
-                uint32_t wait_time,  
-                RH_RF95::ModemConfigChoice rate,
-                uint32_t *received_timed);
-        uint8_t recv(                                    
-                uint32_t wait_time, 
-                uint32_t *received_timed);
         void parse_frame_param(
                 struct dqn_feedback *feedback,
                 uint16_t *trf);
@@ -219,11 +233,12 @@ class RadioDevice{
 class Node: public RadioDevice{
     private:
         uint32_t time_offset;
-        uint16_t node_id = 0;
+        uint16_t nodeid = 0;
         bool has_sync = false;
         uint32_t last_sync_time;
         bool fast_rate = false;
-        
+        bool has_joined = false;
+
         void sync();
         void check_sync();
         bool determine_rate();
@@ -242,13 +257,18 @@ class Node: public RadioDevice{
         void request_nodeid();
         uint32_t recv();
         void sleep(uint32_t time);
+        bool join();
 };
 
 class Server: public RadioDevice{
     private:
         uint32_t networkid;
         uint32_t crq;
-        // DTQ needs to be implementaed in queue
+#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+        queue<dqn_data_request, DQN_DEVICE_QUEUE_SIZE> dtq;
+#else
+        queue<dqn_data_request> dtq;
+#endif
 
         // function call backs
         void (*on_receive)(uint8_t *data, size_t size);

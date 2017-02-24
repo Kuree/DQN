@@ -9,6 +9,9 @@
 #include <time.h>
 #include <stdarg.h>
 #include <stdlib.h>
+#include <math.h>
+
+#include "bloom.h"
 
 #if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
 #undef max      // Arduino toolchain will report error if standard max macro is around
@@ -81,6 +84,15 @@ using namespace std;
 #define TX_PIN 4
 #define RX_PIN 5
 
+
+// frame config
+#define DQN_BF_ERROR 0.05
+#define DQN_FRAME_SF 12
+#define DQN_FRAME_BW 500
+#define DQN_FRAME_CRC true
+#define DQN_FRAME_FIXED_LEN false
+#define DQN_FRAME_CR 4
+#define DQN_FRAME_LOW_DR false
 
 // limitation of arduino-based server
 #define DQN_DEVICE_QUEUE_SIZE 255 
@@ -217,16 +229,19 @@ class RadioDevice{
         RH_RF95 *rf95;
         uint8_t hw_addr[HW_ADDR_LENGTH];
         uint8_t recv_buf[255];
-        uint16_t trf;
+        uint16_t num_tr;
         uint16_t num_data_slot;
+        double bf_error;
+        uint16_t max_payload;
 
         void parse_frame_param(
-                struct dqn_feedback *feedback,
-                uint16_t *trf);
+                struct dqn_feedback *feedback);
     public:
         void setup();
         void set_hw_addr(const uint8_t *hw_addr);
         uint16_t get_frame_param();
+        uint16_t get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre, 
+                uint32_t packet_len, bool crc, bool fixed_len, uint32_t cr, bool low_dr);
 };
 
 

@@ -247,22 +247,61 @@ void RadioDevice::setup(){
 }
 
 
-void RadioDevice::parse_frame_param(struct dqn_feedback *feedback, uint16_t *trf){
+void RadioDevice::parse_frame_param(struct dqn_feedback *feedback){
     uint16_t frame_param = feedback->frame_param;
-    *trf = 2 << (15 - frame_param & 0xF);
-    this->data_length = 1 << ((frame_param >> 4) & 0xF);
-    uint8_t raw_ratio = (frame_param >> 8) & 0xF;
-    float ratio = (float)raw_ratio / 15.0;
-    // TODO:
-    // finish the implementaion once it's finalized.
+    uint8_t fpp = frame_param & 0x3;
+    switch(fpp){
+        case 0:
+            this->bf_error = 0.001;
+            break;
+        case 1:
+            this->bf_error = 0.01;
+            break;
+        case 2:
+            this->bf_error = 0.02;
+            break;
+        case 3:
+            this->bf_error = 0.05;
+            break;
+        default:
+            mprint("error decoding FPP\n");
+            this->bf_error = DQN_BF_ERROR;
+    }
+    uint8_t trf = (frame_param >> 2) & 0x3F;
+    this->num_tr = 16 + 8 * trf;
+    uint8_t dtr = (frame_param >> 8) & 0xF;
+    this->num_data_slot = (uint16_t)floor((double)dtr / 15.0 * (double)(16 + 4 * trf)); 
+    uint16_t mpl = (frame_param >> 12) & 0xF;
+    this->max_payload = 6 * (mpl + 1);
+    this->data_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+            this->max_payload, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+
 }
 
 uint16_t RadioDevice::get_frame_param(){
     uint16_t result = 0;
-    uint8_t num_tr = this->get_power(this->trf);
     result |= num_tr & 0xF;
     // TODO:
     // finish the implementaion once it's finalized.
+}
+
+uint16_t RadioDevice::get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
+        uint32_t packet_len, bool crc, bool fixed_len, uint32_t cr, bool low_dr){
+
+    double rs = (double)bw / (double)(1 << sf);
+    double ts = 1.0 / (double)rs;
+    double t_preamble = (pre + 4.25) * ts;
+    
+    double tmp = ceil( ( 8 * packet_len - 4 * sf + 28 + 16 *crc -
+                          ( fixed_len ? 20 : 0 ) ) /
+                          ( 4 * ( sf - ( ( low_dr > 0 ) ? 2 : 0 ) ) )
+                        ) * ( cr + 4 ); 
+
+    double num_payload = 8 + ( ( tmp > 0 ) ? tmp : 0 );
+    double t_payload = num_payload * ts;
+
+    double t_on_air = t_preamble + t_payload;
+    return (uint16_t)ceil(t_on_air);
 }
 
 uint8_t RadioDevice::get_power(uint32_t number){
@@ -281,8 +320,8 @@ Node::Node(uint8_t *hw_addr){
 }
 
 Node::Node(){
-   uint8_t hw_addr[HW_ADDR_LENGTH] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47};
-   this->ctor(hw_addr);
+    uint8_t hw_addr[HW_ADDR_LENGTH] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47};
+    this->ctor(hw_addr);
 } 
 
 void Node::sync(){
@@ -293,15 +332,14 @@ void Node::sync(){
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         // check if it is a valid feedback package
-            struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
+        struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
             // we find the actual feedback
             // now we need to compute the offset
             // this is not enough!! need to check if the slot size is correct as well
             uint16_t slots_counts = (len - 16) * 4; // TODO: replace it with predefined constant
-            uint16_t trf;
-            this->parse_frame_param(feedback, &trf);
-            if(trf == slots_counts){
+            this->parse_frame_param(feedback);
+            if(this->num_tr == slots_counts){
                 this->time_offset = received_time - DQN_FEEDBACK;
                 break;
             }
@@ -331,22 +369,22 @@ uint32_t Node::send(bool *ack){
         // TODO switched to queue
         this->check_sync();
         uint32_t frame_start = millis();
-        uint16_t chosen_mini_slot = rand() % this->trf;
+        uint16_t chosen_mini_slot = rand() % this->num_tr;
         // send a TR request
         struct dqn_tr tr;
         dqn_make_tr(&tr, 4, this->determine_rate(), this->nodeid);
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * DQN_MINI_SLOT_LENGTH - millis());
         dqn_send(this->rf95, (uint8_t*)&tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
-        
+
         // wait to see the feedback result
-        uint32_t total_tr_time = DQN_MINI_SLOT_LENGTH * this->trf;
+        uint32_t total_tr_time = DQN_MINI_SLOT_LENGTH * this->num_tr;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
         this->sleep(feedback_start_time - millis());
 
         // receive feedback.
         uint8_t buf[255];
-        dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, NULL);
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
         if(feedback->version != DQN_VERSION && feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
@@ -355,19 +393,19 @@ uint32_t Node::send(bool *ack){
         }
         // scan the TR results
         uint16_t dtq = feedback->dtq_length;
-        for(int i = 0; i < self->trq; i++){
+        for(int i = 0; i < this->num_tr; i++){
             uint8_t status;
             if(i % 2)
                 status = feedback->slots[i/2] & 0x3;
             else
-                status = feedback->slots[i/2] >>
+                status = feedback->slots[i/2] >> 1;
         }
         // see if we need to listen to ack
         if(ack != NULL){
-        
-        
+
+
         }
-        
+
         return 0; 
     }
 }
@@ -392,12 +430,12 @@ Server::Server(uint32_t networkid,
     this->networkid = networkid;
     this->on_receive = on_receive;
     this->on_download = on_download;
-    
+
     this->crq = 0;
 }
 
 void Server::run(){
     while(true){
-    
+
     }
 }

@@ -34,6 +34,7 @@ using namespace std;
 #define DQN_PREAMBLE 6
 
 // define DQN encodings
+// TODO: fix all the rates
 #define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
 #define DQN_FAST_CRC Bw500Cr48Sf4096
 #define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
@@ -289,7 +290,7 @@ class Node: public RadioDevice{
         void request_nodeid();
         uint32_t recv();
         void sleep(uint32_t time);
-        bool join();
+        void join();
 };
 
 class Server: public RadioDevice{

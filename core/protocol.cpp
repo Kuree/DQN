@@ -548,6 +548,36 @@ void Node::send_data(int index){
 }
 
 
+void Node::receive_data(int index){
+    // TODO:
+    // 1. fix the rate
+    // 2. assemble them together
+    uint8_t buf[255];
+    uint8_t len = dqn_recv(this->rf95, buf, this->data_length, NULL);
+}
+
+void Node::join_data(int index){
+    if(index == 0) {
+        // send join message
+        struct dqn_join_req req;
+        dqn_make_join_req(&req, this->hw_addr);
+        dqn_send(this->rf95, &req, sizeof(struct dqn_join_req), this->rf95->DQN_RATE_FEEDBACK);
+    } else if(index == 1) {
+        // receive join response
+        struct dqn_join_resp resp;
+        uint8_t len = dqn_recv(this->rf95, (uint8_t *)&resp, this->data_length, 
+                this->rf95->DQN_RATE_FEEDBACK, NULL);
+        this->nodeid = resp.nodeid;
+        this->has_joined = true;
+    }
+}
+
+void Node::join(){
+    struct dqn_tr tr;
+    dqn_make_tr_join(&tr, this->determine_rate());
+    this->send_request(&tr, 0, NULL, DQN_SEND_REQUEST_JOIN);
+}
+
 uint32_t Node::send(bool *ack){
     uint8_t num_of_slots = 2; // TODO: fix this
     struct dqn_tr tr;

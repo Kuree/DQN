@@ -4,6 +4,15 @@
 
 #define MESSAGE_MAX 256
 
+
+// define commands for different send request
+// this is the simplest way I can think of to
+// bypass C++ restriction on function pointers
+#define DQN_SEND_REQUEST_NULL 0
+#define DQN_SEND_REQUEST_UP 1
+#define DQN_SEND_REQUEST_DOWN 2
+#define DQN_SEND_REQUEST_JOIN 3
+
 // CRC8 implementation is adapted from 
 // http://www.rajivchakravorty.com/source-code/uncertainty/multimedia-sim/html/crc8_8c-source.html
 
@@ -394,18 +403,14 @@ uint32_t Node::send(){
     return this->send(NULL);
 }
 
-uint32_t Node::send(bool *ack){
+
+void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
+        void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command){
     while(true) {
-        // TODO switched to queue
         this->check_sync();
         uint32_t frame_start = millis();
         uint16_t chosen_mini_slot = rand() % this->num_tr;
         // send a TR request
-        struct dqn_tr tr;
-        uint8_t num_of_slots = 2;
-        // TODO:
-        // REFACTOR THIS TO MAKE IT GENERIC
-        dqn_make_tr(&tr, num_of_slots, this->determine_rate(), this->nodeid);
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
         dqn_send(this->rf95, (uint8_t*)&tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
@@ -417,13 +422,27 @@ uint32_t Node::send(bool *ack){
 
         // receive feedback.
         uint8_t buf[255];
-        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, NULL);
+        uint32_t received_time;
+        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
         if(feedback->version != DQN_VERSION && feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
             mprint("redeived non-feedback packet\n");
             continue;
         }
+
+        // set the clock and sync
+        this->time_offset = received_time - this->feedback_length;
+        this->has_sync = true;
+        this->last_sync_time = millis();
+
+        // call the feedback_received function
+        if(on_feedback_received)
+            on_feedback_received(feedback);
+        
+        if(send_command)
+            return; // we are done
+
         // scan the TR results
         uint16_t dtq = feedback->dtq_length;
         uint16_t crq = feedback->crq_length;
@@ -464,8 +483,12 @@ uint32_t Node::send(bool *ack){
                     mprint("node id is %x", node_id);
                     if(bloom_check(&bloom, node_id, strlen(node_id))){
                         // enter DTQ
+                        
                     } else {
-                        // enter crq
+                        // enter CRQ
+                        // no need to sleep to the start of the frame
+                        // check_sync() will handle that
+                        this->sleep(this->frame_length * crq);
                     }
                 }
                 
@@ -479,12 +502,35 @@ uint32_t Node::send(bool *ack){
 
         }
     }
+
+}
+
+
+void Node::send_data(int index){
+    // TODO:
+    // based on index load different fragment
+    // now use dummy data
+    uint32_t data[this->max_payload];
+    for(int i = 0; i < this->max_payload; i++)
+        data[i] = i % 256;
+    dqn_send(this->rf95, data, this->max_payload, this->rf95->DQN_FAST_CRC);
+}
+
+
+uint32_t Node::send(bool *ack){
+    uint8_t num_of_slots = 2; // TODO: fix this
+    struct dqn_tr tr;
+    dqn_make_tr(&tr, num_of_slots, this->determine_rate(), this->nodeid);
+
+    // call the generic send function
+    this->send_request(&tr, num_of_slots, NULL, DQN_SEND_REQUEST_UP);
+
     // see if we need to listen to ack
     // this is on pitfall:
     //      there is a rare cases where sending data will span two frames
     //      need to be extra careful about this one.
     if(ack != NULL){
-
+        // notice that offset set to the beginning of the frame
 
     }
 

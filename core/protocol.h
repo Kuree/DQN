@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <math.h>
 
+
 #include "bloom.h"
 
 #if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
@@ -34,7 +35,7 @@ using namespace std;
 
 // define DQN encodings
 #define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
-#define DQN_FAST_CRC rf95->Bw500Cr45Sf4096HeaderCRC
+#define DQN_FAST_CRC Bw500Cr48Sf4096
 #define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
 
 // device only
@@ -146,6 +147,12 @@ struct dqn_data_request{
     uint16_t nodeid;
 };
 
+
+class SendFunction;
+class RadioDevice;
+class Node;
+class Server;
+
 uint16_t dqn_make_feedback(
         struct dqn_feedback* feedback,
         uint32_t        networkid,
@@ -244,7 +251,6 @@ class RadioDevice{
         uint32_t get_frame_length();
 };
 
-
 class Node: public RadioDevice{
     private:
         uint32_t time_offset;
@@ -262,6 +268,13 @@ class Node: public RadioDevice{
         // old C++ doesn't have delegating constructors
         // I miss C#
         void ctor(uint8_t *hw_addr);
+
+        // this is for all the communication requests to the base station
+        // TODO: refactor the code for sync, send, and join
+        void send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
+                void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command);
+
+        void send_data(int index);
     public:
         // this will generate a fixed hardware addresss
         Node();

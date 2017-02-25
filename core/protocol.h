@@ -29,11 +29,7 @@ using namespace std;
 
 // define DQN timing
 #define DQN_GUARD 15
-#define DQN_MINI_SLOT_LENGTH 150
-#define DQN_FEEDBACK 412
-#define DQN_ACK_LENGTH 347
-#define DQN_MINI_SLOT_FRAME (DQN_M * DQN_MINI_SLOT_LENGTH)
-#define DQN_OVERHEAD (DQN_M * DQN_MINI_SLOT_LENGTH + DQN_GUARD * 3 + DQN_FEEDBACK + DQN_ACK_LENGTH)
+#define DQN_TR_LENGTH 150
 #define DQN_PREAMBLE 6
 
 // define DQN encodings
@@ -118,8 +114,8 @@ struct  dqn_feedback{
     uint16_t        crq_length;     // 2
     uint16_t        dtq_length;     // 2
     uint16_t        frame_param;    // 2
-    uint8_t         slots[DQN_M / 4]; // this is not accurate for node 
-} __attribute__((packed));  // total is 24 bytes
+    uint8_t         data[255 - 16]; // this is a placeholder. actual size needs to be computed 
+} __attribute__((packed));  // total is 24 bytes for DQN_M = 32
 
 struct dqn_ack{
     uint8_t         version;
@@ -142,7 +138,6 @@ struct dqn_join_resp{
 } __attribute__((packed)); // total is 10 bytes
 
 
-
 struct dqn_data_request{
     // this is only used by server
     // assume that it is pretty good memory management
@@ -151,12 +146,14 @@ struct dqn_data_request{
     uint16_t nodeid;
 };
 
-struct dqn_feedback* dqn_make_feedback(
+uint16_t dqn_make_feedback(
         struct dqn_feedback* feedback,
         uint32_t        networkid,
         uint16_t        crq_length,
         uint16_t        dtq_length,
-        uint8_t         *slots);
+        uint8_t         *slots,
+        uint16_t        num_of_slots,
+        struct bloom    *bloom);
 
 struct dqn_tr* dqn_make_tr(
         struct          dqn_tr* tr,
@@ -226,6 +223,8 @@ class RadioDevice{
     protected:
         // how long each data slot is
         uint16_t data_length;
+        uint16_t feedback_length;
+
         RH_RF95 *rf95;
         uint8_t hw_addr[HW_ADDR_LENGTH];
         uint8_t recv_buf[255];
@@ -242,6 +241,7 @@ class RadioDevice{
         uint16_t get_frame_param();
         uint16_t get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre, 
                 uint32_t packet_len, bool crc, bool fixed_len, uint32_t cr, bool low_dr);
+        uint32_t get_frame_length();
 };
 
 
@@ -257,6 +257,7 @@ class Node: public RadioDevice{
         void sync();
         void check_sync();
         bool determine_rate();
+        void enter_crq(uint32_t);
 
         // old C++ doesn't have delegating constructors
         // I miss C#

@@ -41,20 +41,26 @@ uint8_t get_crc8(char *data, int len){
 }
 
 
-struct dqn_feedback* dqn_make_feedback(
+uint16_t dqn_make_feedback(
         struct dqn_feedback* feedback, 
         uint32_t networkid,
         uint16_t crq_length,
         uint16_t dtq_length,
-        uint8_t *slots){
+        uint8_t *slots,
+        uint16_t num_of_slots,
+        struct bloom *bloom){
     feedback->version = DQN_VERSION;
     feedback->messageid = DQN_MESSAGE_FEEDBACK;
     feedback->timestamp = (uint32_t)time(NULL);
     feedback->networkid = networkid;
     feedback->crq_length = crq_length;
     feedback->dtq_length = dtq_length;
-    memcpy(feedback->slots, slots, DQN_M / 4);
-    return feedback;
+    memcpy(feedback->data, slots, num_of_slots / 4);
+    uint8_t * bf_offset = feedback->data + num_of_slots / 4;
+    size_t bf_size;
+    int entries;
+    bloom_dump(bloom, bf_offset, &bf_size, &entries);
+    return 16 + num_of_slots / 4 + bf_size;
 }
 
 struct dqn_tr* dqn_make_tr(
@@ -163,7 +169,6 @@ uint8_t dqn_recv(
 
     return len;
 }
-
 
 
 uint8_t dqn_recv(
@@ -280,9 +285,43 @@ void RadioDevice::parse_frame_param(struct dqn_feedback *feedback){
 
 uint16_t RadioDevice::get_frame_param(){
     uint16_t result = 0;
-    result |= num_tr & 0xF;
-    // TODO:
-    // finish the implementaion once it's finalized.
+    // FPP
+    switch(this->bf_error){
+        case 0.01:
+            result |= 1;
+            break;
+        case 0.02:
+            result |= 2;
+            break;
+        case 0.5:
+            result |= 3;
+            break;
+        default:
+            // nothing to add since it's 0
+            break;
+    }
+    // TRF
+    result |= (((this->num_tr - 16) / 8) & 0x3F) << 2;
+    //DTR
+    double dtr = 15.0 / (double)this->num_tr;
+    result |= ((uint8_t)dtr & 0xF) << 8;
+    // MPL
+    result |= ((this->max_payload / 6 - 1) & 0xF) << 12;
+
+    return result;
+}
+
+
+uint32_t RadioDevice::get_frame_length(){
+    // assume TR length is standard throughout different frame configuration
+    uint32_t tr_time = DQN_TR_LENGTH * this->num_tr;
+
+    uint16_t ack_time = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+                         this->num_tr / 4 + 2, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+    uint32_t total_time = tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD +
+        this->data_length * this->num_data_slot + DQN_GUARD + ack_time + DQN_GUARD;
+
+    return total_time;
 }
 
 uint16_t RadioDevice::get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
@@ -336,13 +375,11 @@ void Node::sync(){
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
             // we find the actual feedback
             // now we need to compute the offset
-            // this is not enough!! need to check if the slot size is correct as well
-            uint16_t slots_counts = (len - 16) * 4; // TODO: replace it with predefined constant
             this->parse_frame_param(feedback);
-            if(this->num_tr == slots_counts){
-                this->time_offset = received_time - DQN_FEEDBACK;
-                break;
-            }
+            // compute feedback_length
+            this->feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+                                 len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+            this->time_offset = received_time - this->feedback_length;
         }
     }
 
@@ -356,8 +393,9 @@ void Node::check_sync(){
         this->sync();
     // determine the starting time for the upcoming frame
     uint32_t time_diff = millis() - this->time_offset;
-    // TODO:
-    // finish the sleep after the frame structure is finalized.
+    uint32_t frame_length = this->get_frame_length();
+    uint32_t remain_time = frame_length - (time_diff % frame_length);
+    this->sleep(remain_time);
 }
 
 uint32_t Node::send(){
@@ -365,26 +403,29 @@ uint32_t Node::send(){
 }
 
 uint32_t Node::send(bool *ack){
-    while(true){
+    while(true) {
         // TODO switched to queue
         this->check_sync();
         uint32_t frame_start = millis();
         uint16_t chosen_mini_slot = rand() % this->num_tr;
         // send a TR request
         struct dqn_tr tr;
-        dqn_make_tr(&tr, 4, this->determine_rate(), this->nodeid);
+        uint8_t num_of_slots = 2;
+        // TODO:
+        // REFACTOR THIS TO MAKE IT GENERIC
+        dqn_make_tr(&tr, num_of_slots, this->determine_rate(), this->nodeid);
         // sleep at the last to ensure the timing 
-        this->sleep(frame_start + chosen_mini_slot * DQN_MINI_SLOT_LENGTH - millis());
+        this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
         dqn_send(this->rf95, (uint8_t*)&tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
 
         // wait to see the feedback result
-        uint32_t total_tr_time = DQN_MINI_SLOT_LENGTH * this->num_tr;
+        uint32_t total_tr_time = DQN_TR_LENGTH * this->num_tr;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
         this->sleep(feedback_start_time - millis());
 
         // receive feedback.
         uint8_t buf[255];
-        dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, NULL);
+        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, NULL);
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
         if(feedback->version != DQN_VERSION && feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
@@ -393,21 +434,75 @@ uint32_t Node::send(bool *ack){
         }
         // scan the TR results
         uint16_t dtq = feedback->dtq_length;
-        for(int i = 0; i < this->num_tr; i++){
+        uint16_t crq = feedback->crq_length;
+        for(int i = 0; i < this->num_tr * 4; i++){
+            // TODO: simplify this switch case
             uint8_t status;
-            if(i % 2)
-                status = feedback->slots[i/2] & 0x3;
-            else
-                status = feedback->slots[i/2] >> 1;
+            switch(i % 4){
+                case 0:
+                    status = (feedback->data[i / 4] >> 6) & 0x3;
+                    break;
+                case 1:
+                    status = (feedback->data[i / 4] >> 4) & 0x3;
+                    break;
+                case 2:
+                    status = (feedback->data[i / 4] >> 2) & 0x3;
+                    break;
+                case 3:
+                    status = (feedback->data[i / 4]) & 0x3;
+                    break;
+            }
+            if(i == chosen_mini_slot){
+                if(status == 0){
+                    break; // not received, trying to send again
+                } else if(status == 3 || status != num_of_slots){
+                    // there is an contention
+                    uint32_t frame_length = this->get_frame_length();
+                    this->sleep(frame_length * crq);
+                    // no need to sleep to next TR frame
+                    // check_sync() will handle that 
+                } else {
+                    uint8_t *bf = feedback->data + this->num_tr / 4;
+                    size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here 
+                    struct bloom bloom;
+                    bloom_load(&bloom, bf, bloom_size, this->num_tr, DQN_BF_ERROR);
+                    // test if the node id is in the bloom filter
+                    char node_id[5]; // enough for uint_16
+                    itoa(this->nodeid, node_id, 16);
+                    mprint("node id is %x", node_id);
+                    if(bloom_check(&bloom, node_id, strlen(node_id))){
+                        // enter DTQ
+                    } else {
+                        // enter crq
+                    }
+                }
+                
+            } else{
+                if(status > 0 and status < 3){
+                    dtq += status;
+                } else if(status == 3){
+                    crq++;
+                }
+            }
+
         }
-        // see if we need to listen to ack
-        if(ack != NULL){
-
-
-        }
-
-        return 0; 
     }
+    // see if we need to listen to ack
+    // this is on pitfall:
+    //      there is a rare cases where sending data will span two frames
+    //      need to be extra careful about this one.
+    if(ack != NULL){
+
+
+    }
+
+    return 0; 
+}
+
+void Node::enter_crq(uint32_t sleep_time){
+    this->sleep(sleep_time);
+    // calibrate to the TR slot
+    this->check_sync();    
 }
 
 bool Node::determine_rate(){

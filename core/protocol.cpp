@@ -286,20 +286,12 @@ void RadioDevice::parse_frame_param(struct dqn_feedback *feedback){
 uint16_t RadioDevice::get_frame_param(){
     uint16_t result = 0;
     // FPP
-    switch(this->bf_error){
-        case 0.01:
+    if(this->bf_error == 0.01)
             result |= 1;
-            break;
-        case 0.02:
+    else if(this->bf_error == 0.02)
             result |= 2;
-            break;
-        case 0.5:
+    else if(this->bf_error == 0.5)
             result |= 3;
-            break;
-        default:
-            // nothing to add since it's 0
-            break;
-    }
     // TRF
     result |= (((this->num_tr - 16) / 8) & 0x3F) << 2;
     //DTR

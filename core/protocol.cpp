@@ -296,11 +296,11 @@ uint16_t RadioDevice::get_frame_param(){
     uint16_t result = 0;
     // FPP
     if(this->bf_error == 0.01)
-            result |= 1;
+        result |= 1;
     else if(this->bf_error == 0.02)
-            result |= 2;
+        result |= 2;
     else if(this->bf_error == 0.5)
-            result |= 3;
+        result |= 3;
     // TRF
     result |= (((this->num_tr - 16) / 8) & 0x3F) << 2;
     //DTR
@@ -317,10 +317,10 @@ uint32_t RadioDevice::get_frame_length(){
     // assume TR length is standard throughout different frame configuration
     uint32_t tr_time = DQN_TR_LENGTH * this->num_tr;
 
-    uint16_t ack_time = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
-                         this->num_tr / 4 + 2, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+    this->ack_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+            this->num_tr / 4 + 2, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
     uint32_t total_time = tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD +
-        this->data_length * this->num_data_slot + DQN_GUARD + ack_time + DQN_GUARD;
+        this->data_length * this->num_data_slot + DQN_GUARD + this->ack_length + DQN_GUARD;
 
     return total_time;
 }
@@ -331,11 +331,11 @@ uint16_t RadioDevice::get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
     double rs = (double)bw / (double)(1 << sf);
     double ts = 1.0 / (double)rs;
     double t_preamble = (pre + 4.25) * ts;
-    
+
     double tmp = ceil( ( 8 * packet_len - 4 * sf + 28 + 16 *crc -
-                          ( fixed_len ? 20 : 0 ) ) /
-                          ( 4 * ( sf - ( ( low_dr > 0 ) ? 2 : 0 ) ) )
-                        ) * ( cr + 4 ); 
+                ( fixed_len ? 20 : 0 ) ) /
+            ( 4 * ( sf - ( ( low_dr > 0 ) ? 2 : 0 ) ) )
+            ) * ( cr + 4 ); 
 
     double num_payload = 8 + ( ( tmp > 0 ) ? tmp : 0 );
     double t_payload = num_payload * ts;
@@ -379,7 +379,7 @@ void Node::sync(){
             this->parse_frame_param(feedback);
             // compute feedback_length
             this->feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
-                                 len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+                    len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->time_offset = received_time - this->feedback_length;
         }
     }
@@ -418,6 +418,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // wait to see the feedback result
         uint32_t total_tr_time = DQN_TR_LENGTH * this->num_tr;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
+        uint32_t frame_length = this->get_frame_length();
         this->sleep(feedback_start_time - millis());
 
         // receive feedback.
@@ -439,7 +440,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // call the feedback_received function
         if(on_feedback_received)
             on_feedback_received(feedback);
-        
+
         if(send_command)
             return; // we are done
 
@@ -468,7 +469,6 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     break; // not received, trying to send again
                 } else if(status == 3 || status != num_of_slots){
                     // there is an contention
-                    uint32_t frame_length = this->get_frame_length();
                     this->sleep(frame_length * crq);
                     // no need to sleep to next TR frame
                     // check_sync() will handle that 
@@ -483,15 +483,46 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     mprint("node id is %x", node_id);
                     if(bloom_check(&bloom, node_id, strlen(node_id))){
                         // enter DTQ
-                        
+                        // sleep to the beginning of data slots
+                        uint32_t data_start_time = this->time_offset + total_tr_time +
+                            DQN_GUARD + this->feedback_length + DQN_GUARD;
+                        this->sleep(millis() - data_start_time);
+                        // frame counter is used to make sure we won't send data in protocol overhead
+                        int frame_counter = 0;
+                        for(int i = 0; i < num_of_slots; i++){
+                            if(!dtq){
+                                uint32_t data_slot_start = millis();
+                                switch(send_command){
+                                    case DQN_SEND_REQUEST_UP:
+                                        this->send_data(i);
+                                        break;
+                                    case DQN_SEND_REQUEST_DOWN:
+                                        this->receive_data(i);
+                                        break;
+                                    case DQN_SEND_REQUEST_JOIN:
+                                        this->join_data(i);
+                                        break;
+                                }
+                            } else {
+                                this->sleep(this->data_length);
+                                dtq--;
+                            }
+                            frame_counter++;
+                            // avoid the protocol overhead
+                            if(frame_counter % this->num_data_slot == this->num_data_slot - 1){
+                                uint32_t sleep_time = DQN_GUARD + this->ack_length + DQN_GUARD +
+                                    total_tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD;
+                                this->sleep(sleep_time);
+                            }
+                        }
                     } else {
                         // enter CRQ
                         // no need to sleep to the start of the frame
                         // check_sync() will handle that
-                        this->sleep(this->frame_length * crq);
+                        this->sleep(frame_length * crq);
                     }
                 }
-                
+
             } else{
                 if(status > 0 and status < 3){
                     dtq += status;

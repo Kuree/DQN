@@ -231,6 +231,7 @@ class RadioDevice{
         // how long each data slot is
         uint16_t data_length;
         uint16_t feedback_length;
+        uint16_t ack_length;
 
         RH_RF95 *rf95;
         uint8_t hw_addr[HW_ADDR_LENGTH];
@@ -275,6 +276,8 @@ class Node: public RadioDevice{
                 void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command);
 
         void send_data(int index);
+        void join_data(int index);
+        void receive_data(int index);
     public:
         // this will generate a fixed hardware addresss
         Node();

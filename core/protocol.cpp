@@ -370,7 +370,7 @@ void Node::ctor(uint8_t *hw_addr){
     this->has_sync = false;
     this->fast_rate = false;
     this->has_joined = false;
-    
+
     memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
 }
 
@@ -611,7 +611,7 @@ uint32_t Node::send(bool *ack){
     //      need to be extra careful about this one.
     if(ack != NULL){
         // notice that offset set to the beginning of the frame
-
+        // TODO: add ack
     }
 
     return 0; 
@@ -646,6 +646,48 @@ Server::Server(uint32_t networkid,
     this->on_download = on_download;
 
     this->crq = 0;
+
+    // use the default network configuration
+    this->change_network_config(12, DQN_BF_ERROR, 12, 5); 
+
+    this->reset_frame();
+}
+
+void Server::send_feedback(){
+    struct dqn_feedback feedback;
+}
+
+void Server::reset_frame(){
+    // reset the TR status
+    for(int i = 0; i < this->num_tr; i++){
+        this->tr_status[i] = 0;
+    }
+
+    // reset the bloom filter
+    bloom_reset(&this->bloom); 
+}
+
+// notice that the bloom filter will be reset as well
+void Server::change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl){
+    // we only allow a set of fpp values
+    if(fpp <= 0.001)
+        fpp = 0.001;
+    else if(fpp <= 0.01)
+        fpp = 0.01;
+    else if(fpp <= 0.02)
+        fpp = 0.02;
+    else
+        fpp = 0.05;
+    this->bf_error = fpp; 
+
+    this->num_tr = 16 + 8 * trf; 
+
+    this->num_data_slot = (uint16_t)floor((double)dtr / 15.0 * (double)(16 + 4 * trf));
+    this->max_payload = 6 * (mpl + 1);
+    this->data_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+            this->max_payload, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+    
+    bloom_init_buf(&bloom, this->num_tr, this->bf_error, this->_bloom_buf); 
 }
 
 void Server::run(){

@@ -25,6 +25,8 @@ using namespace std;
 void sig_handler(int sig);
 void print_feedback(struct dqn_feedback* fb);
 
+char __server_buf[sizeof(Server)]; // place holder for server memory.
+Server *server;
 
 //Flag for Ctrl-C
 volatile sig_atomic_t flag = 0;
@@ -33,7 +35,10 @@ volatile sig_atomic_t flag = 0;
 int main (int argc, const char* argv[] ){
     signal(SIGINT, sig_handler);
 
-return 0;
+    // see answer: http://arduino.stackexchange.com/a/1499
+    server = new (__server_buf)Server(0, NULL, NULL);
+
+    return 0;
 }
 
 void sig_handler(int sig)

@@ -95,6 +95,8 @@ using namespace std;
 
 // limitation of arduino-based server
 #define DQN_DEVICE_QUEUE_SIZE 255 
+#define DQN_SERVER_MAX_TR 256
+#define DQN_SERVER_MAX_BLOOM 2048
 
 // for testing only
 #define DQN_MTU 20
@@ -298,6 +300,10 @@ class Server: public RadioDevice{
     private:
         uint32_t networkid;
         uint32_t crq;
+        struct bloom bloom;
+        uint8_t tr_status[DQN_SERVER_MAX_TR];
+        uint8_t _bloom_buf[DQN_SERVER_MAX_BLOOM];
+
 #ifdef ARDUINO
         queue<dqn_data_request, DQN_DEVICE_QUEUE_SIZE> dtq;
 #else
@@ -309,6 +315,9 @@ class Server: public RadioDevice{
         void (*on_download)(uint8_t *hw_addr, uint8_t *data, size_t *size);
         
         void send_feedback();
+        void receive_tr();
+        void send_ack();
+        void reset_frame();
 
     public:
         Server(uint32_t, 
@@ -316,6 +325,8 @@ class Server: public RadioDevice{
                 void (*on_download)(uint8_t*, uint8_t*, size_t*));
         // this is a blocking method
         void run();
+
+        void change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl);
 };
 
 #endif

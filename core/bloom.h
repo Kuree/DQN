@@ -8,8 +8,6 @@
 #ifndef _BLOOM_H
 #define _BLOOM_H
 
-#include <stdlib.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -68,6 +66,9 @@ struct bloom
  *
  */
 int bloom_init(struct bloom * bloom, int entries, double error);
+
+
+int bloom_init_buf(struct bloom *bloom, int entries, double error, unsigned char *buf);
 
 
 /** ***************************************************************************
@@ -142,6 +143,7 @@ void bloom_print(struct bloom * bloom);
 void bloom_free(struct bloom * bloom);
 
 
+void bloom_reset(struct bloom *bloom);
 
 void bloom_load(
         struct bloom * bloom,
@@ -156,6 +158,14 @@ unsigned char* bloom_dump(
         size_t * bytes,  
         int * entries);
 
+
+/** ***************************************************************************
+ * Returns version string compiled into library.
+ *
+ * Return: version string
+ *
+ */
+const char * bloom_version();
 
 #ifdef __cplusplus
 }

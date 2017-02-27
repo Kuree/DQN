@@ -6,7 +6,7 @@
 # http://www.airspayce.com/mikem/bcm2835/
 
 CC            = g++
-CFLAGS        = -DRASPBERRY_PI -DBCM2835_NO_DELAY_COMPATIBILITY -g
+CFLAGS        = -DRASPBERRY_PI -DBCM2835_NO_DELAY_COMPATIBILITY -g -lm
 #LIBS          = -lbcm2835
 LIBS          = -lwiringPi
 RADIOHEADBASE = ./RadioHead
@@ -37,12 +37,15 @@ RHGenericSPI.o: $(RADIOHEADBASE)/RHGenericSPI.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
 protocol.o: ../core/protocol.cpp
-	$(CC) $(FLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
+	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
+
+bloom.o: ../core/bloom.c
+	$(CC) $(CFLAGS)  -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
 DQNserver.o: DQNserver.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
-DQNserver: DQNserver.o protocol.o RH_RF95.o RasPiWiring.o RHHardwareSPI.o RHSPIDriver.o RHGenericDriver.o RHGenericSPI.o
+DQNserver: DQNserver.o protocol.o bloom.o RH_RF95.o RasPiWiring.o RHHardwareSPI.o RHSPIDriver.o RHGenericDriver.o RHGenericSPI.o
 	$(CC) $(addprefix $(BUILDDIR)/,$^) $(LIBS) -o DQNserver
 
 clean:

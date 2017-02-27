@@ -4,25 +4,12 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
-// include the RF95
-#include <RH_RF95.h>
 #include <time.h>
 #include <stdarg.h>
 #include <stdlib.h>
 #include <math.h>
-
-
 #include "bloom.h"
 
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
-#undef max      // Arduino toolchain will report error if standard max macro is around
-#undef min
-#include <queue.h>
-using namespace etl;
-#else
-#include <queue>
-using namespace std;
-#endif
 
 // define DQN parameters
 #define DQN_M 32
@@ -66,14 +53,20 @@ using namespace std;
 
 // radio configuration
 // arduino
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#ifdef ARDUINO
 #define RFM95_CS 8
 #define RFM95_RST 4
 #define RFM95_INT 3
-#define RF95_FREQ 915.0
 #define VBATPIN A7 
-#endif
 
+#include <RH_RF95.h>
+
+#undef max      // Arduino toolchain will report error if standard max macro is around
+#undef min
+#include <queue.h>
+using namespace etl;
+
+#else
 // raspberry pi
 #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
 #define RF95_INT_PIN 7    // this is BCM pin 4, physical pin 7.
@@ -82,6 +75,14 @@ using namespace std;
 #define TX_PIN 4
 #define RX_PIN 5
 
+#include <wiringPi.h>
+#include <RH_RF95.h>
+#include <queue>
+using namespace std;
+
+#endif
+
+#define RF95_FREQ 915.0
 
 // frame config
 #define DQN_BF_ERROR 0.05
@@ -170,7 +171,7 @@ struct dqn_tr* dqn_make_tr(
         uint16_t        nodeid);
 
 struct dqn_tr* dqn_make_tr_join(
-        struct          dqn_tr* tr,
+        struct          dqn_tr *tr,
         bool            high_rate);
 
 struct dqn_join_req* dqn_make_join_req(
@@ -256,11 +257,11 @@ class RadioDevice{
 class Node: public RadioDevice{
     private:
         uint32_t time_offset;
-        uint16_t nodeid = 0;
-        bool has_sync = false;
+        uint16_t nodeid;
+        bool has_sync;
         uint32_t last_sync_time;
-        bool fast_rate = false;
-        bool has_joined = false;
+        bool fast_rate;
+        bool has_joined;
 
         void sync();
         void check_sync();
@@ -297,7 +298,7 @@ class Server: public RadioDevice{
     private:
         uint32_t networkid;
         uint32_t crq;
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#ifdef ARDUINO
         queue<dqn_data_request, DQN_DEVICE_QUEUE_SIZE> dtq;
 #else
         queue<dqn_data_request> dtq;

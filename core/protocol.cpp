@@ -86,6 +86,20 @@ struct dqn_tr* dqn_make_tr(
     return tr;
 }
 
+
+struct dqn_tr* dqn_make_tr_join(
+        struct dqn_tr* tr,
+        bool high_rate){
+    tr->version = DQN_VERSION | (DQN_MESSAGE_MASK & 2) | (high_rate << 2);
+    tr->messageid = DQN_MESSAGE_TR_JOIN;
+    tr->nodeid = 0; // undefined
+    tr->crc = 0;
+    uint8_t crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
+    tr->crc = crc;
+    return tr;
+}
+
+
 struct dqn_tr* dqn_make_join_req(
         struct dqn_tr* req,
         bool high_rate){
@@ -122,7 +136,7 @@ struct dqn_join_resp* dqn_make_join_resp(
 void mprint(const char *format, ...){
     va_list args;
     va_start(args, format);
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#ifdef ARDUINO
     char buf[MESSAGE_MAX];
     vsnprintf(buf, MESSAGE_MAX, format, args);
     Serial.print(buf);
@@ -188,7 +202,7 @@ uint8_t dqn_recv(
 }
 
 RH_RF95* setup_radio(RH_RF95 *rf95){
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#ifdef ARDUINO
     pinMode(VBATPIN, INPUT);
 
     // un-reset the radio
@@ -252,7 +266,7 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
 }
 
 void RadioDevice::setup(){
-#if (RH_PLATFORM == RH_PLATFORM_ARDUINO)
+#ifdef ARDUINO
     this->rf95 = new RH_RF95(RFM95_CS, RFM95_INT);
 #else
     this->rf95 = new RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
@@ -352,6 +366,11 @@ uint8_t RadioDevice::get_power(uint32_t number){
 
 void Node::ctor(uint8_t *hw_addr){
     this->setup();
+    this->nodeid = 0;
+    this->has_sync = false;
+    this->fast_rate = false;
+    this->has_joined = false;
+    
     memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
 }
 
@@ -478,8 +497,8 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     struct bloom bloom;
                     bloom_load(&bloom, bf, bloom_size, this->num_tr, DQN_BF_ERROR);
                     // test if the node id is in the bloom filter
-                    char node_id[5]; // enough for uint_16
-                    itoa(this->nodeid, node_id, 16);
+                    char node_id[10]; // enough for uint_16
+                    sprintf(node_id, "%x", this->nodeid); 
                     mprint("node id is %x", node_id);
                     if(bloom_check(&bloom, node_id, strlen(node_id))){
                         // enter DTQ
@@ -607,8 +626,9 @@ void Node::enter_crq(uint32_t sleep_time){
 bool Node::determine_rate(){
     // TODO:
     // fix this rate
-    int rssi = this->rf95->lastRssi();
-    return rssi >= -10;
+    return false;
+    //int rssi = this->rf95->lastRssi();
+    //return rssi >= -10;
 }
 
 void Node::sleep(uint32_t time){

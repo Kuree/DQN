@@ -466,23 +466,8 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // scan the TR results
         uint16_t dtq = feedback->dtq_length;
         uint16_t crq = feedback->crq_length;
-        for(int i = 0; i < this->num_tr * 4; i++){
-            // TODO: simplify this switch case
-            uint8_t status;
-            switch(i % 4){
-                case 0:
-                    status = (feedback->data[i / 4] >> 6) & 0x3;
-                    break;
-                case 1:
-                    status = (feedback->data[i / 4] >> 4) & 0x3;
-                    break;
-                case 2:
-                    status = (feedback->data[i / 4] >> 2) & 0x3;
-                    break;
-                case 3:
-                    status = (feedback->data[i / 4]) & 0x3;
-                    break;
-            }
+        for(int i = 0; i < this->num_tr; i++){
+            uint8_t status = (feedback->data[i / 4] >> (6 - ( i % 4) * 2)) & 0x3;
             if(i == chosen_mini_slot){
                 if(status == 0){
                     break; // not received, trying to send again
@@ -654,7 +639,40 @@ Server::Server(uint32_t networkid,
 }
 
 void Server::send_feedback(){
+    // processing raw TR results to more compacted form
+    uint8_t slots[this->num_tr/4];
+    // reset to 0
+    memset(slots, 0, this->num_tr/4);
+
+    for(int i = 0; i < this->num_tr; i++){
+        slots[i/4] |= (this->tr_status[i] & 0x3) << (6 - (i % 4) * 2);
+    }
     struct dqn_feedback feedback;
+    uint8_t feedback_size = dqn_make_feedback(&feedback, this->networkid, this->crq, this->dtq,
+            slots, this->num_tr, &this->bloom);
+    // assuming the time is correct
+    dqn_send(this->rf95, &feedback, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
+
+    // adjust the crq and dtq
+    for(int i = 0; i < this->num_tr; i++){
+        if(this->tr_status[i] == 0)
+            continue;
+        else if(this->tr_status[i] == 3)
+            this->crq++;
+        else
+            this->dtq += this->tr_status[i];
+    }
+
+    // decrease dtq and crq
+    if(this->crq > 0)
+        this->crq--;
+    if(this->dtq > this->num_data_slot)
+        this->dtq -= this->num_data_slot;
+    else
+        this->dtq = 0;
+    // dtq should match the actual queue length
+    if(this->dtq != this->dtqueue.size())
+        mprint("queue calculation is wrong. dtq: %d, dtqueue: %d\n", this->dtq, this->dtqueue.size());
 }
 
 void Server::reset_frame(){
@@ -665,6 +683,45 @@ void Server::reset_frame(){
 
     // reset the bloom filter
     bloom_reset(&this->bloom); 
+}
+
+void Server::receive_tr(){
+    // transmission will be in no header mode
+    rf95->setPayloadLength(sizeof(struct dqn_tr));
+    uint8_t buf[255];
+    for(int i = 0; i < this->num_tr; i++){
+        // loop throw each TR slots
+        uint32_t received_time;
+        dqn_recv(this->rf95, buf, DQN_TR_LENGTH, this->rf95->Bw500Cr48Sf4096NoHeadNoCrc, &received_time);
+        // compute the CRC
+        struct dqn_tr *tr = (struct dqn_tr*)buf;
+        uint8_t crc = tr->crc;
+        tr->crc = 0;
+        if(crc != get_crc8((char*)tr, sizeof(struct dqn_tr))){
+            // there is a collision
+            this->tr_status[i] = 3;
+        } else {
+            if(tr->version != DQN_VERSION){
+                mprint("DQN version is not correct. Expect: %d, got %d\n", DQN_VERSION, tr->version);
+                continue;
+            }
+            uint8_t messageid = tr->messageid;
+            // TODO:
+            // check if node id is valid
+            uint16_t nodeid = tr->nodeid;
+            if(messageid & DQN_MESSAGE_TR != DQN_MESSAGE_TR){
+                mprint("Invalid message id %d\n", messageid);
+                continue;
+            }
+            uint8_t meta = messageid & DQN_MESSAGE_MASK;
+            bool downstream = (meta >> 2) & 1;
+            bool high_rate = (meta >> 3) & 1;
+            uint8_t num_of_slots = meta & 3;
+            // CONTINUE
+            this->tr_status[i] = num_of_slots;
+        }
+        
+    }
 }
 
 // notice that the bloom filter will be reset as well

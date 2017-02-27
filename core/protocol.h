@@ -300,14 +300,15 @@ class Server: public RadioDevice{
     private:
         uint32_t networkid;
         uint32_t crq;
+        uint32_t dtq;
         struct bloom bloom;
         uint8_t tr_status[DQN_SERVER_MAX_TR];
         uint8_t _bloom_buf[DQN_SERVER_MAX_BLOOM];
 
 #ifdef ARDUINO
-        queue<dqn_data_request, DQN_DEVICE_QUEUE_SIZE> dtq;
+        queue<dqn_data_request, DQN_DEVICE_QUEUE_SIZE> dtqueue;
 #else
-        queue<dqn_data_request> dtq;
+        queue<dqn_data_request> dtqueue;
 #endif
 
         // function call backs

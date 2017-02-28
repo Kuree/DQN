@@ -64,6 +64,8 @@
 #undef max      // Arduino toolchain will report error if standard max macro is around
 #undef min
 #include <queue.h>
+#include <map.h>
+
 using namespace etl;
 
 #else
@@ -80,6 +82,7 @@ using namespace etl;
 #include <queue>
 using namespace std;
 
+#include <map>
 #endif
 
 #define RF95_FREQ 915.0
@@ -97,6 +100,7 @@ using namespace std;
 #define DQN_DEVICE_QUEUE_SIZE 255 
 #define DQN_SERVER_MAX_TR 256
 #define DQN_SERVER_MAX_BLOOM 2048
+#define DQN_NODE_CAPACITY 8192 // may increase this size later
 
 // for testing only
 #define DQN_MTU 20
@@ -149,7 +153,7 @@ struct dqn_data_request{
     //
     uint8_t messageid;
     uint16_t nodeid;
-};
+} __attribute__((packed));
 
 
 class SendFunction;
@@ -304,11 +308,21 @@ class Server: public RadioDevice{
         struct bloom bloom;
         uint8_t tr_status[DQN_SERVER_MAX_TR];
         uint8_t _bloom_buf[DQN_SERVER_MAX_BLOOM];
+        uint8_t _tr_data_buf[sizeof(struct dqn_data_request) * DQN_SERVER_MAX_TR];
+        uint8_t _hw_addr_buf[HW_ADDR_LENGTH * DQN_NODE_CAPACITY];
+
 
 #ifdef ARDUINO
-        queue<dqn_data_request, DQN_DEVICE_QUEUE_SIZE> dtqueue;
+        queue<struct dqn_data_request *, DQN_DEVICE_QUEUE_SIZE> dtqueue;
+        etl::map<uint16_t, uint8_t *, DQN_NODE_CAPACITY> node_table;
+        etl::map<uint8_t *, uint16_t, DQN_NODE_CAPACITY> node_table_invert;
 #else
-        queue<dqn_data_request> dtqueue;
+        queue<struct dqn_data_request *> dtqueue;
+        // use double table to reduce the implementation difficulty
+        // at the cost of memory space
+        // since the buffer is already allocated, it is actually not that bad.
+        map<uint16_t, uint8_t*> node_table;
+        map<uint8_t *, uint16_t> node_table_invert;
 #endif
 
         // function call backs
@@ -319,6 +333,8 @@ class Server: public RadioDevice{
         void receive_tr();
         void send_ack();
         void reset_frame();
+        void recv_data();
+        uint16_t register_device(uint8_t *hw_addr);
 
     public:
         Server(uint32_t, 

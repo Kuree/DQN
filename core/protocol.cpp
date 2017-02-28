@@ -50,6 +50,30 @@ uint8_t get_crc8(char *data, int len){
 }
 
 
+// from https://en.wikipedia.org/wiki/Fletcher%27s_checksum
+uint16_t fletcher16( uint8_t const *data, size_t bytes )
+{
+        uint16_t sum1 = 0xff, sum2 = 0xff;
+        size_t tlen;
+ 
+        while (bytes) {
+                tlen = ((bytes >= 20) ? 20 : bytes);
+                bytes -= tlen;
+                do {
+                        sum2 += sum1 += *data++;
+                        tlen--;
+                } while (tlen);
+                sum1 = (sum1 & 0xff) + (sum1 >> 8);
+                sum2 = (sum2 & 0xff) + (sum2 >> 8);
+        }
+        /* Second reduction step to reduce sums to 8 bits */
+        sum1 = (sum1 & 0xff) + (sum1 >> 8);
+        sum2 = (sum2 & 0xff) + (sum2 >> 8);
+        return (sum2 << 8) | sum1;
+}
+
+
+
 uint16_t dqn_make_feedback(
         struct dqn_feedback* feedback, 
         uint32_t networkid,
@@ -714,14 +738,66 @@ void Server::receive_tr(){
                 continue;
             }
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
+            uint8_t num_of_slots = meta & 3;
+            this->tr_status[i] = num_of_slots;
+            // push this to the dtqueue
+#ifdef ARDUINO
+            if(this->dtqueue.full()) {
+                mprint("Queue is full!\n");
+                continue;
+            }
+#endif
+            struct dqn_data_request *request = (struct dqn_data_request*)(this->_tr_data_buf + 
+                    this->dtqueue.size() * sizeof(struct dqn_data_request)); // manually calculate the space
+            request->messageid = messageid;
+            request->nodeid = nodeid;
+            this->dtqueue.push(request);
+        }
+
+    }
+}
+
+void Server::recv_data(){
+    // Currently no ALOHA implementaiton
+    uint32_t start_time = millis();
+    for(int i = 0; i < this->num_data_slot; i++){
+        // align the frame
+        while(millis() < i * this->data_length + start_time);
+        if(this->dtqueue.size()){
+            struct dqn_data_request *request = this->dtqueue.front();
+            this->dtqueue.pop();
+            // decode the message ID
+            uint8_t messageid = request->messageid;
+            uint8_t meta = messageid & DQN_MESSAGE_MASK;
             bool downstream = (meta >> 2) & 1;
             bool high_rate = (meta >> 3) & 1;
-            uint8_t num_of_slots = meta & 3;
-            // CONTINUE
-            this->tr_status[i] = num_of_slots;
+            if(downstream) {
+                mprint("downstream not implemented\n");
+                continue;
+            }
+            uint8_t num_of_slots;
         }
-        
+        else{
+            // ALOHA
+        }
     }
+}
+
+
+uint16_t Server::register_device(uint8_t *hw_addr){
+	// TODO:
+    // add cleaning stuff here
+    if(this->node_table_invert.count(hw_addr))
+        return this->node_table_invert[hw_addr];
+    uint16_t nodeid = fletcher16(hw_addr, HW_ADDR_LENGTH);
+    while(true){
+        if(this->node_table.count(nodeid))
+            nodeid++;
+    } // ensure it's unique
+    this->node_table.insert(pair<uint16_t, uint8_t*>(nodeid, hw_addr));
+    this->node_table_invert.insert(pair<uint8_t *, uint16_t>(hw_addr, nodeid));
+
+    return nodeid;
 }
 
 // notice that the bloom filter will be reset as well
@@ -743,7 +819,7 @@ void Server::change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl
     this->max_payload = 6 * (mpl + 1);
     this->data_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
             this->max_payload, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
-    
+
     bloom_init_buf(&bloom, this->num_tr, this->bf_error, this->_bloom_buf); 
 }
 

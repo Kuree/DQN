@@ -23,7 +23,8 @@
 // define DQN encodings
 // TODO: fix all the rates
 #define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
-#define DQN_FAST_CRC Bw500Cr48Sf4096
+#define DQN_SLOW_CRC Bw500Cr48Sf4096
+#define DQN_FAST_CRC Bw500Cr45Sf4096
 #define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
 
 // device only
@@ -240,6 +241,7 @@ class RadioDevice{
         uint16_t data_length;
         uint16_t feedback_length;
         uint16_t ack_length;
+        uint32_t frame_length;
 
         RH_RF95 *rf95;
         uint8_t hw_addr[HW_ADDR_LENGTH];
@@ -326,7 +328,7 @@ class Server: public RadioDevice{
 #endif
 
         // function call backs
-        void (*on_receive)(uint8_t *data, size_t size);
+        void (*on_receive)(uint8_t *data, size_t size, uint8_t *hw_addr);
         void (*on_download)(uint8_t *hw_addr, uint8_t *data, size_t *size);
         
         void send_feedback();
@@ -338,7 +340,7 @@ class Server: public RadioDevice{
 
     public:
         Server(uint32_t, 
-                void (*on_receive)(uint8_t*, size_t), 
+                void (*on_receive)(uint8_t*, size_t, uint8_t *), 
                 void (*on_download)(uint8_t*, uint8_t*, size_t*));
         // this is a blocking method
         void run();

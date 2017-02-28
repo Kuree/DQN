@@ -437,8 +437,8 @@ void Node::check_sync(){
         this->sync();
     // determine the starting time for the upcoming frame
     uint32_t time_diff = millis() - this->time_offset;
-    uint32_t frame_length = this->get_frame_length();
-    uint32_t remain_time = frame_length - (time_diff % frame_length);
+    this->frame_length = this->get_frame_length();
+    uint32_t remain_time = frame_length - (time_diff % this->frame_length);
     this->sleep(remain_time);
 }
 
@@ -461,7 +461,6 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // wait to see the feedback result
         uint32_t total_tr_time = DQN_TR_LENGTH * this->num_tr;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
-        uint32_t frame_length = this->get_frame_length();
         this->sleep(feedback_start_time - millis());
 
         // receive feedback.
@@ -572,7 +571,7 @@ void Node::send_data(int index){
     uint32_t data[this->max_payload];
     for(int i = 0; i < this->max_payload; i++)
         data[i] = i % 256;
-    dqn_send(this->rf95, data, this->max_payload, this->rf95->DQN_FAST_CRC);
+    dqn_send(this->rf95, data, this->max_payload, this->rf95->DQN_SLOW_CRC);
 }
 
 
@@ -648,7 +647,7 @@ void Node::sleep(uint32_t time){
 }
 
 Server::Server(uint32_t networkid,
-        void (*on_receive)(uint8_t*, size_t),
+        void (*on_receive)(uint8_t*, size_t, uint8_t*),
         void (*on_download)(uint8_t*, uint8_t*, size_t*)){
     this->networkid = networkid;
     this->on_receive = on_receive;
@@ -660,6 +659,9 @@ Server::Server(uint32_t networkid,
     this->change_network_config(12, DQN_BF_ERROR, 12, 5); 
 
     this->reset_frame();
+}
+
+void Server::send_ack(){
 }
 
 void Server::send_feedback(){
@@ -768,6 +770,8 @@ void Server::recv_data(){
             this->dtqueue.pop();
             // decode the message ID
             uint8_t messageid = request->messageid;
+            uint16_t nodeid = request->nodeid;
+            uint8_t *hw_addr = this->node_table[nodeid];
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             bool downstream = (meta >> 2) & 1;
             bool high_rate = (meta >> 3) & 1;
@@ -775,7 +779,12 @@ void Server::recv_data(){
                 mprint("downstream not implemented\n");
                 continue;
             }
-            uint8_t num_of_slots;
+            uint8_t num_of_slots = meta & 3;
+            uint8_t buf[255];
+            uint8_t len = dqn_recv(this->rf95, buf, this->data_length,
+                    high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
+            if(this->on_receive)
+                this->on_receive(buf, len, hw_addr);
         }
         else{
             // ALOHA
@@ -794,8 +803,8 @@ uint16_t Server::register_device(uint8_t *hw_addr){
         if(this->node_table.count(nodeid))
             nodeid++;
     } // ensure it's unique
-    this->node_table.insert(pair<uint16_t, uint8_t*>(nodeid, hw_addr));
-    this->node_table_invert.insert(pair<uint8_t *, uint16_t>(hw_addr, nodeid));
+    this->node_table.insert(std::pair<uint16_t, uint8_t*>(nodeid, hw_addr));
+    this->node_table_invert.insert(std::pair<uint8_t *, uint16_t>(hw_addr, nodeid));
 
     return nodeid;
 }
@@ -820,11 +829,29 @@ void Server::change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl
     this->data_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
             this->max_payload, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
 
+    //uint8_t ack_size = 2 + this->num_data_slot / 8;
+    //this->ack_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+    //        ack_size, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+    this->frame_length = this->get_frame_length();
     bloom_init_buf(&bloom, this->num_tr, this->bf_error, this->_bloom_buf); 
 }
 
 void Server::run(){
     while(true){
-
+        // frame start
+        uint32_t frame_start = millis();
+        this->receive_tr();
+        while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
+        uint32_t feedback_start = millis();
+        // feedback frame
+        this->send_feedback();
+        while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
+        // data time
+        this->recv_data();
+        // this is ACK time
+        uint32_t ack_start = millis();
+        this->send_ack();
+        while(millis() < ack_start + this->ack_length + DQN_GUARD);
+        
     }
 }

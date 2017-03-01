@@ -24,6 +24,8 @@ using namespace std;
 //Function Definitions
 void sig_handler(int sig);
 void print_feedback(struct dqn_feedback* fb);
+void print_packet(uint8_t*, int);
+void print_message(uint8_t* data, size_t size, uint8_t* hw_addr);
 
 char __server_buf[sizeof(Server)]; // place holder for server memory.
 Server *server;
@@ -36,10 +38,18 @@ int main (int argc, const char* argv[] ){
     signal(SIGINT, sig_handler);
 
     // see answer: http://arduino.stackexchange.com/a/1499
-    server = new (__server_buf)Server(0, NULL, NULL);
+    server = new (__server_buf)Server(0, &print_message, NULL);
     server->print_frame_info(); 
+    server->run();
 
     return 0;
+}
+
+
+void print_message(uint8_t* data, size_t size, uint8_t* hw_addr){
+    mprint("%X:%X:%X:%X:%X:%X send a message\n",
+            hw_addr[0], hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
+    print_packet(data, size);
 }
 
 void sig_handler(int sig)

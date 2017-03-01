@@ -12,8 +12,8 @@
 
 
 // define DQN parameters
-#define DQN_M 32
-#define DQN_N 128 // changed to a small number to make debug easier
+#define DQN_M 80
+#define DQN_N 64 // changed to a small number to make debug easier
 
 // define DQN timing
 #define DQN_GUARD 15
@@ -274,7 +274,6 @@ class Node: public RadioDevice{
         bool fast_rate;
         bool has_joined;
 
-        void sync();
         void check_sync();
         bool determine_rate();
         void enter_crq(uint32_t);
@@ -295,6 +294,7 @@ class Node: public RadioDevice{
         // this will generate a fixed hardware addresss
         Node();
         Node(uint8_t *hw_addr);
+        void sync();
         uint32_t receive_feedback(struct dqn_feedback *feedback);
         uint32_t send();
         uint32_t send(bool *ack);

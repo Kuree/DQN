@@ -209,6 +209,7 @@ uint8_t dqn_recv(
             if (!rf95->recv(buf, &len)){
                 mprint("receive failed");
             }
+            mprint("len:%d buf[0]:%X\n", len, buf[0]);
             if(indefinite_loop)
                 return len; // end the loop
         }
@@ -446,6 +447,7 @@ void Node::sync(){
         uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         // check if it is a valid feedback package
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
+        mprint("received a packet with size: %d\n", len);
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
             // we find the actual feedback
             // now we need to compute the offset
@@ -689,6 +691,8 @@ Server::Server(uint32_t networkid,
     this->change_network_config(8, DQN_BF_ERROR, 12, 5); 
 
     this->reset_frame();
+
+    this->setup(); 
 }
 
 void Server::send_ack(){
@@ -869,19 +873,20 @@ void Server::change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl
 void Server::run(){
     while(true){
         // frame start
-        uint32_t frame_start = millis();
-        this->receive_tr();
-        while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
+        //uint32_t frame_start = millis();
+        //this->receive_tr();
+        //while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
         uint32_t feedback_start = millis();
         // feedback frame
+        mprint("sending feedback\n");
         this->send_feedback();
         while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
         // data time
-        this->recv_data();
+        //this->recv_data();
         // this is ACK time
-        uint32_t ack_start = millis();
-        this->send_ack();
-        while(millis() < ack_start + this->ack_length + DQN_GUARD);
+        //uint32_t ack_start = millis();
+        //this->send_ack();
+        //while(millis() < ack_start + this->ack_length + DQN_GUARD);
 
     }
 }

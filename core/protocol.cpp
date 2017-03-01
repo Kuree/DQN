@@ -53,23 +53,23 @@ uint8_t get_crc8(char *data, int len){
 // from https://en.wikipedia.org/wiki/Fletcher%27s_checksum
 uint16_t fletcher16( uint8_t const *data, size_t bytes )
 {
-        uint16_t sum1 = 0xff, sum2 = 0xff;
-        size_t tlen;
- 
-        while (bytes) {
-                tlen = ((bytes >= 20) ? 20 : bytes);
-                bytes -= tlen;
-                do {
-                        sum2 += sum1 += *data++;
-                        tlen--;
-                } while (tlen);
-                sum1 = (sum1 & 0xff) + (sum1 >> 8);
-                sum2 = (sum2 & 0xff) + (sum2 >> 8);
-        }
-        /* Second reduction step to reduce sums to 8 bits */
+    uint16_t sum1 = 0xff, sum2 = 0xff;
+    size_t tlen;
+
+    while (bytes) {
+        tlen = ((bytes >= 20) ? 20 : bytes);
+        bytes -= tlen;
+        do {
+            sum2 += sum1 += *data++;
+            tlen--;
+        } while (tlen);
         sum1 = (sum1 & 0xff) + (sum1 >> 8);
         sum2 = (sum2 & 0xff) + (sum2 >> 8);
-        return (sum2 << 8) | sum1;
+    }
+    /* Second reduction step to reduce sums to 8 bits */
+    sum1 = (sum1 & 0xff) + (sum1 >> 8);
+    sum2 = (sum2 & 0xff) + (sum2 >> 8);
+    return (sum2 << 8) | sum1;
 }
 
 
@@ -351,15 +351,37 @@ uint16_t RadioDevice::get_frame_param(){
 }
 
 
+uint32_t RadioDevice::get_feedback_length(){
+    // assume you have everything else set up
+    // may need to refactor it
+    // this is a dirty and quick implementation
+    struct bloom bloom;
+    uint8_t buf[255];
+    bloom_init_buf(&bloom, this->num_tr, this->bf_error, buf);
+    uint8_t slots[255];
+    struct dqn_feedback feedback;
+    uint32_t feedback_size = dqn_make_feedback(&feedback, 0, 0, 0,
+                slots, this->num_tr, &bloom);
+    uint32_t feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
+                feedback_size, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+    return feedback_length;
+}
+
 uint32_t RadioDevice::get_frame_length(){
     // assume TR length is standard throughout different frame configuration
     uint32_t tr_time = DQN_TR_LENGTH * this->num_tr;
-
     this->ack_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
-            this->num_tr / 4 + 2, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+            this->num_tr / 8 + 2, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
+
+    // TODO:
+    // refactor this and make it more efficient
+    if(!this->feedback_length){
+        struct dqn_feedback feedback;
+        uint8_t slots[255];
+        this->feedback_length = this->get_feedback_length();
+    }
     uint32_t total_time = tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD +
         this->data_length * this->num_data_slot + DQN_GUARD + this->ack_length + DQN_GUARD;
-
     return total_time;
 }
 
@@ -370,10 +392,9 @@ uint16_t RadioDevice::get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
     double ts = 1.0 / (double)rs;
     double t_preamble = (pre + 4.25) * ts;
 
-    double tmp = ceil( ( 8 * packet_len - 4 * sf + 28 + 16 *crc -
+    double tmp = ceil( (double)( 8 * packet_len - 4 * sf + 28 + 16 *crc -
                 ( fixed_len ? 20 : 0 ) ) /
-            ( 4 * ( sf - ( ( low_dr > 0 ) ? 2 : 0 ) ) )
-            ) * ( cr + 4 ); 
+            (double)(4 * ( sf - ( ( low_dr > 0 ) ? 2 : 0)))) * (double)( cr + 4 ); 
 
     double num_payload = 8 + ( ( tmp > 0 ) ? tmp : 0 );
     double t_payload = num_payload * ts;
@@ -387,6 +408,15 @@ uint8_t RadioDevice::get_power(uint32_t number){
     return 31 - __builtin_clz(number);
 }
 
+
+void RadioDevice::print_frame_info(){
+    mprint("---------- DQN information ----------\n");
+    mprint("frame length: %d\n", this->frame_length);
+    mprint("num of TR: %d\t num of data slots: %d\t\n", this->num_tr, this->num_data_slot); 
+    mprint("data length: %d ms\tfeedback length: %d ms\tACK length: %d\n",
+            this->data_length, this->feedback_length, this->ack_length);
+    mprint("--------------------------------------\n");
+}
 
 void Node::ctor(uint8_t *hw_addr){
     this->setup();
@@ -656,7 +686,7 @@ Server::Server(uint32_t networkid,
     this->crq = 0;
 
     // use the default network configuration
-    this->change_network_config(12, DQN_BF_ERROR, 12, 5); 
+    this->change_network_config(8, DQN_BF_ERROR, 12, 5); 
 
     this->reset_frame();
 }
@@ -794,7 +824,7 @@ void Server::recv_data(){
 
 
 uint16_t Server::register_device(uint8_t *hw_addr){
-	// TODO:
+    // TODO:
     // add cleaning stuff here
     if(this->node_table_invert.count(hw_addr))
         return this->node_table_invert[hw_addr];
@@ -824,7 +854,7 @@ void Server::change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl
 
     this->num_tr = 16 + 8 * trf; 
 
-    this->num_data_slot = (uint16_t)floor((double)dtr / 15.0 * (double)(16 + 4 * trf));
+    this->num_data_slot = (uint16_t)floor((double)dtr / 15.0 * this->num_tr);
     this->max_payload = 6 * (mpl + 1);
     this->data_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
             this->max_payload, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
@@ -852,6 +882,6 @@ void Server::run(){
         uint32_t ack_start = millis();
         this->send_ack();
         while(millis() < ack_start + this->ack_length + DQN_GUARD);
-        
+
     }
 }

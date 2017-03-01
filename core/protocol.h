@@ -89,7 +89,7 @@ using namespace std;
 #define RF95_FREQ 915.0
 
 // frame config
-#define DQN_BF_ERROR 0.05
+#define DQN_BF_ERROR 0.01
 #define DQN_FRAME_SF 12
 #define DQN_FRAME_BW 500
 #define DQN_FRAME_CRC true
@@ -253,6 +253,8 @@ class RadioDevice{
 
         void parse_frame_param(
                 struct dqn_feedback *feedback);
+        uint32_t get_feedback_length();
+
     public:
         void setup();
         void set_hw_addr(const uint8_t *hw_addr);
@@ -260,6 +262,7 @@ class RadioDevice{
         uint16_t get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre, 
                 uint32_t packet_len, bool crc, bool fixed_len, uint32_t cr, bool low_dr);
         uint32_t get_frame_length();
+        void print_frame_info();
 };
 
 class Node: public RadioDevice{

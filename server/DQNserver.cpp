@@ -37,6 +37,7 @@ int main (int argc, const char* argv[] ){
 
     // see answer: http://arduino.stackexchange.com/a/1499
     server = new (__server_buf)Server(0, NULL, NULL);
+    server->print_frame_info(); 
 
     return 0;
 }

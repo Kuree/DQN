@@ -229,6 +229,8 @@ uint8_t dqn_recv(
 
 RH_RF95* setup_radio(RH_RF95 *rf95){
 #ifdef ARDUINO
+    pinMode(13, OUTPUT);
+    digitalWrite(13, LOW);
     pinMode(VBATPIN, INPUT);
 
     // un-reset the radio
@@ -442,7 +444,20 @@ void Node::sync(){
         // trying to receive any packet
         uint8_t buf[255];
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        //uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        //test
+        uint8_t len;
+        // TEST
+        this->rf95->setModemConfig(this->rf95->Bw500Cr45Sf128);
+        while(true){
+            if(this->rf95->available()){
+                if(!this->rf95->recv(buf, &len))
+                    mprint("something went wrong\n");
+                else
+                    mprint("len: %d\n", len);
+            }
+        }
+        
         // check if it is a valid feedback package
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
         mprint("received a packet with size: %d\n", len);
@@ -713,6 +728,8 @@ void Server::send_feedback(){
             slots, this->num_tr, &this->bloom);
     // assuming the time is correct
     //dqn_send(this->rf95, &feedback, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
+    // TEST
+    this->rf95->setModemConfig(this->rf95->Bw500Cr45Sf128);
     if(this-rf95->send((uint8_t*)&feedback, feedback_size))
         mprint("sent: %d\n", feedback_size);
     // adjust the crq and dtq

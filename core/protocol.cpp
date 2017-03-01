@@ -169,7 +169,8 @@ void mprint(const char *format, ...){
 #endif
 }
 void dqn_send(RH_RF95 *rf95, const void* data, size_t size){
-    if(!rf95->send((uint8_t *)data, sizeof(size))){
+    mprint("sending size:%d\n", size);
+    if(!rf95->send((uint8_t *)data, size)){
         mprint("send failed");
     }
 }
@@ -199,7 +200,7 @@ uint8_t dqn_recv(
         uint8_t* buf, 
         uint32_t wait_time, 
         uint32_t *received_time){
-    uint8_t len = 0;
+    uint8_t len;
     uint32_t start = millis();
     bool indefinite_loop = wait_time == 0;
     while(millis() < start + wait_time || indefinite_loop){
@@ -271,7 +272,7 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
         mprint("rf95 set freq to %5.2f.\n", 915.0);
     }
 
-    if (rf95->setModemConfig(rf95->Bw500Cr48Sf4096NoCrc)){
+    if (rf95->setModemConfig(rf95->DQN_RATE_FEEDBACK)){
         mprint("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
     }else{
         mprint("rf95 configuration failed.\n");
@@ -280,21 +281,18 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
 
     // set the preamble
     rf95->setPreambleLength(DQN_PREAMBLE);
-    printf("rf95 set preamble to %d\n", DQN_PREAMBLE);
-
+    mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
+    
     rf95->setTxPower(23);
-
-    rf95->setPreambleLength(DQN_PREAMBLE);
-    mprint("Set premable to %d\n", DQN_PREAMBLE);
 
     return rf95;
 }
 
 void RadioDevice::setup(){
 #ifdef ARDUINO
-    this->rf95 = new RH_RF95(RFM95_CS, RFM95_INT);
+    this->rf95 = new (this->_rf95_buf)RH_RF95(RFM95_CS, RFM95_INT);
 #else
-    this->rf95 = new RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
+    this->rf95 = new (this->_rf95_buf)RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
 #endif
     setup_radio(this->rf95);
 }
@@ -696,6 +694,9 @@ Server::Server(uint32_t networkid,
 }
 
 void Server::send_ack(){
+    // TODO:
+    // implement ACK
+
 }
 
 void Server::send_feedback(){
@@ -711,8 +712,9 @@ void Server::send_feedback(){
     uint8_t feedback_size = dqn_make_feedback(&feedback, this->networkid, this->crq, this->dtq,
             slots, this->num_tr, &this->bloom);
     // assuming the time is correct
-    dqn_send(this->rf95, &feedback, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
-
+    //dqn_send(this->rf95, &feedback, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
+    if(this-rf95->send((uint8_t*)&feedback, feedback_size))
+        mprint("sent: %d\n", feedback_size);
     // adjust the crq and dtq
     for(int i = 0; i < this->num_tr; i++){
         if(this->tr_status[i] == 0)

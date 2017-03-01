@@ -46,7 +46,7 @@ void sig_handler(int sig)
 }
 
 void print_feedback(struct dqn_feedback* fb){
-    for(int i = 0; i < DQN_M; i++){
+    for(int i = 0; i < 80; i++){
         printf("[%d]: %d\t", i, fb->data[i]);
     }
     printf(" CRQ: %d\tDTQ: %d\tACK: ", fb->crq_length, fb->dtq_length);

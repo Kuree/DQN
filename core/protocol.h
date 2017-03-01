@@ -11,10 +11,6 @@
 #include "bloom.h"
 
 
-// define DQN parameters
-#define DQN_M 80
-#define DQN_N 64 // changed to a small number to make debug easier
-
 // define DQN timing
 #define DQN_GUARD 15
 #define DQN_TR_LENGTH 150
@@ -103,10 +99,6 @@ using namespace std;
 #define DQN_SERVER_MAX_BLOOM 256
 #define DQN_NODE_CAPACITY 256 // may increase this size later
 
-// for testing only
-#define DQN_MTU 20
-#define DQN_MAX_PACKET (DQN_MTU * 4)
-
 struct dqn_tr{
     uint8_t         version;
     uint8_t         messageid;
@@ -130,7 +122,7 @@ struct  dqn_feedback{
 struct dqn_ack{
     uint8_t         version;
     uint8_t         messageid;
-    uint8_t         data_acks[DQN_N / 8];
+    uint8_t         data_acks[32]; // this is a buf
 } __attribute__((packed));  // total is 18 bytes
 
 struct dqn_join_req{
@@ -236,6 +228,7 @@ void mprint(const char *format, ...);
 class RadioDevice{
     private:
         uint8_t get_power(uint32_t number);
+        uint8_t _rf95_buf[sizeof(RH_RF95)];
     protected:
         // how long each data slot is
         uint16_t data_length;

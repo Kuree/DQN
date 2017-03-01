@@ -100,8 +100,8 @@ using namespace std;
 // limitation of arduino-based server
 #define DQN_DEVICE_QUEUE_SIZE 255 
 #define DQN_SERVER_MAX_TR 256
-#define DQN_SERVER_MAX_BLOOM 2048
-#define DQN_NODE_CAPACITY 8192 // may increase this size later
+#define DQN_SERVER_MAX_BLOOM 256
+#define DQN_NODE_CAPACITY 256 // may increase this size later
 
 // for testing only
 #define DQN_MTU 20

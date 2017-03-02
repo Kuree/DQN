@@ -200,23 +200,20 @@ uint8_t dqn_recv(
         uint8_t* buf, 
         uint32_t wait_time, 
         uint32_t *received_time){
-    uint8_t len;
     uint32_t start = millis();
     bool indefinite_loop = wait_time == 0;
     while(millis() < start + wait_time || indefinite_loop){
         if(rf95->available()){
-            if(received_time != NULL)
-                *received_time = millis();
-            if (!rf95->recv(buf, &len)){
-                mprint("receive failed");
+            uint8_t buff[255];
+            uint8_t len = sizeof(buff);
+            if(rf95->recv(buff, &len)){
+                memcpy(buf, buff, len); 
+                return len;
             }
-            mprint("len:%d buf[0]:%X\n", len, buf[0]);
-            if(indefinite_loop)
-                return len; // end the loop
         }
-    }
+     }
 
-    return len;
+    return 0;
 }
 
 
@@ -271,10 +268,10 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
         mprint("rf95 set freq failed.\n");
         exit(-96);
     }else{
-        mprint("rf95 set freq to %5.2f.\n", 915.0);
+        mprint("rf95 set freq to %5.2f.\n", RF95_FREQ);
     }
 
-    if (rf95->setModemConfig(rf95->DQN_RATE_FEEDBACK)){
+    if (rf95->setModemConfig(rf95->Bw500Cr45Sf128)){
         mprint("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
     }else{
         mprint("rf95 configuration failed.\n");
@@ -282,8 +279,8 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
     }
 
     // set the preamble
-    rf95->setPreambleLength(DQN_PREAMBLE);
-    mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
+    //rf95->setPreambleLength(DQN_PREAMBLE);
+    //mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
     
     rf95->setTxPower(23);
 
@@ -444,23 +441,10 @@ void Node::sync(){
         // trying to receive any packet
         uint8_t buf[255];
         uint32_t received_time;
-        //uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
-        //test
-        uint8_t len;
-        // TEST
-        this->rf95->setModemConfig(this->rf95->Bw500Cr45Sf128);
-        while(true){
-            if(this->rf95->available()){
-                if(!this->rf95->recv(buf, &len))
-                    mprint("something went wrong\n");
-                else
-                    mprint("len: %d\n", len);
-            }
-        }
-        
-        // check if it is a valid feedback package
+        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        mprint("len: %d\n", len);
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
-        mprint("received a packet with size: %d\n", len);
+        mprint("version: %X, id:%X\n", feedback->version, feedback->messageid);
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
             // we find the actual feedback
             // now we need to compute the offset
@@ -469,11 +453,13 @@ void Node::sync(){
             this->feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
                     len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->time_offset = received_time - this->feedback_length;
+            this->last_sync_time = millis();
+            this->has_sync = true;
+            mprint("synced");
+            break;
         }
     }
 
-    this->last_sync_time = millis();
-    this->has_sync = true;
 }
 
 
@@ -723,15 +709,11 @@ void Server::send_feedback(){
     for(int i = 0; i < this->num_tr; i++){
         slots[i/4] |= (this->tr_status[i] & 0x3) << (6 - (i % 4) * 2);
     }
-    struct dqn_feedback feedback;
-    uint8_t feedback_size = dqn_make_feedback(&feedback, this->networkid, this->crq, this->dtq,
+    uint8_t feedback[255];
+    uint8_t feedback_size = dqn_make_feedback((struct dqn_feedback*)feedback, this->networkid, this->crq, this->dtq,
             slots, this->num_tr, &this->bloom);
     // assuming the time is correct
-    //dqn_send(this->rf95, &feedback, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
-    // TEST
-    this->rf95->setModemConfig(this->rf95->Bw500Cr45Sf128);
-    if(this-rf95->send((uint8_t*)&feedback, feedback_size))
-        mprint("sent: %d\n", feedback_size);
+    dqn_send(this->rf95, &feedback, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
     // adjust the crq and dtq
     for(int i = 0; i < this->num_tr; i++){
         if(this->tr_status[i] == 0)
@@ -898,6 +880,7 @@ void Server::run(){
         uint32_t feedback_start = millis();
         // feedback frame
         mprint("sending feedback\n");
+        uint8_t buf[134];
         this->send_feedback();
         while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
         // data time

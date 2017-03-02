@@ -18,10 +18,10 @@
 
 // define DQN encodings
 // TODO: fix all the rates
-#define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
-#define DQN_SLOW_CRC Bw500Cr48Sf4096
-#define DQN_FAST_CRC Bw500Cr45Sf4096
-#define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
+#define DQN_RATE_FEEDBACK Bw125Cr45Sf128
+#define DQN_SLOW_CRC Bw125Cr45Sf128
+#define DQN_FAST_CRC Bw125Cr45Sf128
+#define DQN_SLOW_NOCRC Bw125Cr45Sf128
 
 // device only
 #define DQN_IDLE 0
@@ -56,6 +56,7 @@
 #define RFM95_INT 3
 #define VBATPIN A7 
 
+#include <SPI.h>
 #include <RH_RF95.h>
 
 #undef max      // Arduino toolchain will report error if standard max macro is around
@@ -236,7 +237,6 @@ class RadioDevice{
         uint16_t ack_length;
         uint32_t frame_length;
 
-        RH_RF95 *rf95;
         uint8_t hw_addr[HW_ADDR_LENGTH];
         uint8_t recv_buf[255];
         uint16_t num_tr;
@@ -249,6 +249,7 @@ class RadioDevice{
         uint32_t get_feedback_length();
 
     public:
+        RH_RF95 *rf95;
         void setup();
         void set_hw_addr(const uint8_t *hw_addr);
         uint16_t get_frame_param();

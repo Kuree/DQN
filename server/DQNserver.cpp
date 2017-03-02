@@ -56,9 +56,9 @@ void print_feedback(struct dqn_feedback* fb){
 
 
 #ifndef ARDUINO
-//Main Function
 int main (int argc, const char* argv[] ){
     signal(SIGINT, &sig_handler);
+    // see answer: http://arduino.stackexchange.com/a/1499
     server = new (__server_buf)Server(0, &print_message, NULL);
 #else
 void setup(){
@@ -67,9 +67,9 @@ void setup(){
 
 void loop(){
 #endif
-    // see answer: http://arduino.stackexchange.com/a/1499
     server->print_frame_info(); 
     server->run();
+
 }
 
 

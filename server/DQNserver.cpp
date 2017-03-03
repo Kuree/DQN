@@ -45,16 +45,6 @@ void sig_handler(int sig)
     flag=1;
 }
 
-void print_feedback(struct dqn_feedback* fb){
-    for(int i = 0; i < 80; i++){
-        printf("[%d]: %d\t", i, fb->data[i]);
-    }
-    printf(" CRQ: %d\tDTQ: %d\tACK: ", fb->crq_length, fb->dtq_length);
-
-    printf("\n");
-}
-
-
 #ifndef ARDUINO
 int main (int argc, const char* argv[] ){
     signal(SIGINT, &sig_handler);

@@ -18,10 +18,10 @@
 
 // define DQN encodings
 // TODO: fix all the rates
-#define DQN_RATE_FEEDBACK Bw125Cr45Sf128
-#define DQN_SLOW_CRC Bw125Cr45Sf128
-#define DQN_FAST_CRC Bw125Cr45Sf128
-#define DQN_SLOW_NOCRC Bw125Cr45Sf128
+#define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
+#define DQN_SLOW_CRC Bw500Cr48Sf4096
+#define DQN_FAST_CRC Bw500Cr45Sf4096
+#define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
 
 // device only
 #define DQN_IDLE 0
@@ -160,6 +160,7 @@ uint16_t dqn_make_feedback(
         uint32_t        networkid,
         uint16_t        crq_length,
         uint16_t        dtq_length,
+        uint16_t         frame_param,
         uint8_t         *slots,
         uint16_t        num_of_slots,
         struct bloom    *bloom);
@@ -222,7 +223,8 @@ uint8_t get_crc8(char *data, int len);
 // message printing
 void mprint(const char *format, ...);
 
-
+// for debugging and printing info only
+void print_feedback(struct dqn_feedback* feedback);
 
 // defining the base class for both server and device
 // a base class wrapper for all DQN methods
@@ -230,6 +232,7 @@ class RadioDevice{
     private:
         uint8_t get_power(uint32_t number);
         uint8_t _rf95_buf[sizeof(RH_RF95)];
+
     protected:
         // how long each data slot is
         uint16_t data_length;
@@ -243,6 +246,7 @@ class RadioDevice{
         uint16_t num_data_slot;
         double bf_error;
         uint16_t max_payload;
+        uint8_t _msg_buf[255];
 
         void parse_frame_param(
                 struct dqn_feedback *feedback);

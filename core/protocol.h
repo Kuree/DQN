@@ -99,6 +99,7 @@ using namespace std;
 #define DQN_SERVER_MAX_TR 256
 #define DQN_SERVER_MAX_BLOOM 256
 #define DQN_NODE_CAPACITY 256 // may increase this size later
+#define DQN_MESSAGE_QUEUE_SIZE 10
 
 struct dqn_tr{
     uint8_t         version;
@@ -149,6 +150,11 @@ struct dqn_data_request{
     uint16_t nodeid;
 } __attribute__((packed));
 
+
+struct dqn_node_message{
+    uint8_t* data;
+    uint8_t size;
+} __attribute__((packed));
 
 class SendFunction;
 class RadioDevice;
@@ -272,9 +278,17 @@ class Node: public RadioDevice{
         bool fast_rate;
         bool has_joined;
 
-        void check_sync();
         bool determine_rate();
         void enter_crq(uint32_t);
+
+
+        // message queue
+        uint8_t _queue_buf[DQN_MESSAGE_QUEUE_SIZE * 30];
+#ifdef ARDUINO
+        queue<struct dqn_node_message, DQN_MESSAGE_QUEUE_SIZE> message_queue;
+#else
+        queue<struct dqn_node_message> message_queue;
+#endif
 
         // old C++ doesn't have delegating constructors
         // I miss C#
@@ -301,6 +315,8 @@ class Node: public RadioDevice{
         uint32_t recv();
         void sleep(uint32_t time);
         void join();
+        void check_sync();
+        bool add_data_to_send(uint8_t * data, uint8_t size);
 };
 
 class Server: public RadioDevice{

@@ -604,13 +604,15 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
 
 
 void Node::send_data(int index){
-    // TODO:
-    // based on index load different fragment
-    // now use dummy data
-    uint32_t data[this->max_payload];
-    for(int i = 0; i < this->max_payload; i++)
-        data[i] = i % 256;
-    dqn_send(this->rf95, data, this->max_payload, this->rf95->DQN_SLOW_CRC);
+    if(!this->message_queue.size()){
+        mprint("No data to send. Message queue is wrong\n");
+        while(1);
+    }
+    struct dqn_node_message message = this->message_queue.front();
+    this->message_queue.pop();
+    uint8_t * data = message.data;
+    uint8_t size = message.size;
+    dqn_send(this->rf95, data, size, this->rf95->DQN_SLOW_CRC);
 }
 
 
@@ -644,7 +646,12 @@ void Node::join(){
 }
 
 uint32_t Node::send(bool *ack){
-    uint8_t num_of_slots = 2; // TODO: fix this
+    // peak the queue
+    if(!this->message_queue.size())
+        return 0;
+    struct dqn_node_message message = this->message_queue.front();
+    uint8_t size = message.size;
+    uint8_t num_of_slots = size / this->max_payload + 1; 
     struct dqn_tr tr;
     dqn_make_tr(&tr, num_of_slots, this->determine_rate(), this->nodeid);
 
@@ -660,9 +667,32 @@ uint32_t Node::send(bool *ack){
         // TODO: add ack
     }
 
-    return 0; 
+    return size; 
 }
 
+bool Node::add_data_to_send(uint8_t *data, uint8_t size){
+    if(size > 2 * this->max_payload)
+        return false;
+#ifdef ARDUINO
+    if(this->message_queue.full())
+        return false;
+#endif
+    struct dqn_node_message message;
+    // compute the last one
+    uint8_t* base = this->_queue_buf;
+    if(this->message_queue.size()){
+       struct dqn_node_message back = this->message_queue.back();
+       base = back.data + back.size;
+    }
+    // copy it to the buffer
+    memcpy(base, data, size);
+    // push it to the queue
+    message.data = base;
+    message.size = size;
+    this->message_queue.push(message);
+    return true;
+    
+}
 void Node::enter_crq(uint32_t sleep_time){
     this->sleep(sleep_time);
     // calibrate to the TR slot

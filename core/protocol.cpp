@@ -171,7 +171,6 @@ void mprint(const char *format, ...){
 #endif
 }
 void dqn_send(RH_RF95 *rf95, const void* data, size_t size){
-    mprint("sending size:%d\n", size);
     if(!rf95->send((uint8_t *)data, size)){
         mprint("send failed");
     }
@@ -225,9 +224,33 @@ uint8_t dqn_recv(
 }
 
 
+// debugging functions
+// will be removed later
+void print_byte(uint8_t byte){
+    for(int i = 0; i < 8; i++){
+        const char *c = (!(byte & (1 << i)))? "0" : "1";
+        mprint(c);
+    }
+    mprint(" ");
+}
+
+uint16_t get_tr(uint16_t frame_param){
+    uint16_t trf = (frame_param >> 2) & 0x3F;
+    return 16 + 8 * trf;
+}
+
 void print_feedback(struct dqn_feedback* feedback){
     mprint("------------FEEDBACK-----------\n");
-    mprint("frame param: %X\n", feedback->frame_param);
+    mprint("frame param: %X CRQ: %d DTQ: %d\n", feedback->frame_param, feedback->crq_length,
+            feedback->dtq_length);
+    mprint("TR result:\n");
+    for(int i = 0; i < get_tr(feedback->frame_param) / 4; i++) {
+        print_byte(feedback->data[i]);
+        if(i % 4 == 3)
+            mprint("\n");
+    }
+    mprint("\n");
+    
     mprint("-------------------------------\n");
 }
 
@@ -453,7 +476,6 @@ void Node::sync(){
         uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
-            print_feedback(feedback); 
             // we find the actual feedback
             // now we need to compute the offset
             this->parse_frame_param(feedback);
@@ -464,7 +486,7 @@ void Node::sync(){
             this->time_offset = received_time - this->feedback_length;
             this->last_sync_time = millis();
             this->has_sync = true;
-            mprint("synced");
+            this->print_frame_info();
             break;
         }
     }
@@ -491,6 +513,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command){
     while(true) {
         this->check_sync();
+        mprint("starting to send TR...\n");
         uint32_t frame_start = millis();
         uint16_t chosen_mini_slot = rand() % this->num_tr;
         // send a TR request
@@ -787,6 +810,10 @@ void Server::reset_frame(){
 }
 
 void Server::receive_tr(){
+    // reset all the tr status
+    for(int i = 0; i < this->num_tr; i++)
+        this->tr_status[i] = 0;
+
     // transmission will be in no header mode
     rf95->setPayloadLength(sizeof(struct dqn_tr));
     for(int i = 0; i < this->num_tr; i++){
@@ -916,8 +943,8 @@ void Server::run(){
     while(true){
         // frame start
         uint32_t frame_start = millis();
-        //this->receive_tr();
-        //while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
+        this->receive_tr();
+        while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
         uint32_t feedback_start = millis();
         // feedback frame
         mprint("sending feedback\n");

@@ -13,7 +13,7 @@ void loop() {
     mprint("joinging the network\n");
     node->join();
     delay(random(2000) + 1000);
-    mprint("sending data");
+    mprint("sending data\n");
     uint8_t data[20];
     for(int i = 0; i < 20; i++){
       data[i] = i;

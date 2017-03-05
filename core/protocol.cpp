@@ -373,7 +373,7 @@ uint16_t RadioDevice::get_frame_param(){
     result |= (((this->num_tr - 16) / 8) & 0x3F) << 2;
     //DTR
     double dtr = 15.0 / (double)this->num_tr * (double)this->num_data_slot;
-    result |= ((uint8_t)dtr & 0xF) << 8;
+    result |= ((uint8_t)ceil(dtr) & 0xF) << 8;
     // MPL
     result |= ((this->max_payload / 6 - 1) & 0xF) << 12;
 
@@ -483,7 +483,7 @@ void Node::sync(){
             this->feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
                     len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->frame_length = this->get_frame_length();
-            this->time_offset = received_time - this->feedback_length;
+            this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr;
             this->last_sync_time = millis();
             this->has_sync = true;
             this->print_frame_info();
@@ -516,6 +516,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         mprint("starting to send TR...\n");
         uint32_t frame_start = millis();
         uint16_t chosen_mini_slot = rand() % this->num_tr;
+        mprint("choosen at slot %d\n", chosen_mini_slot);
         // send a TR request
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
@@ -747,7 +748,8 @@ Server::Server(uint32_t networkid,
     this->crq = 0;
 
     // use the default network configuration
-    this->change_network_config(8, DQN_BF_ERROR, 12, 5); 
+    // USE TEST VALUES
+    this->change_network_config(0, DQN_BF_ERROR, 6, 4); 
 
     this->reset_frame();
 
@@ -820,11 +822,15 @@ void Server::receive_tr(){
         // loop throw each TR slots
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf, DQN_TR_LENGTH, 
-                this->rf95->Bw500Cr48Sf4096NoHeadNoCrc, &received_time);
-        if(len != sizeof(struct dqn_tr))
+                this->rf95->DQN_SLOW_NOCRC, &received_time);
+        if(len != sizeof(struct dqn_tr)){
+            if(len > 0)
+                mprint("received a len: %d\n", len);
             continue;
+        }
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
+        mprint("TR received at %d. Version: %X\n", i, tr->version);
         uint8_t crc = tr->crc;
         tr->crc = 0;
         if(crc != get_crc8((char*)tr, sizeof(struct dqn_tr))){

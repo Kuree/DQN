@@ -6,12 +6,12 @@ Node* node;
 
 void setup() {
     node = new (__node_buf)Node();
-}
-
-void loop() {
     node->check_sync();
     mprint("joinging the network\n");
     node->join();
+}
+
+void loop() {
     delay(random(2000) + 1000);
     mprint("sending data\n");
     uint8_t data[20];

@@ -207,6 +207,7 @@ uint8_t dqn_recv(
         if(rf95->available()){
             uint8_t len = RH_RF95_MAX_MESSAGE_LEN;
             if(rf95->recv(buf, &len)){
+                *received_time = millis();
                 return len;
             }
         }
@@ -483,7 +484,8 @@ void Node::sync(){
             this->feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
                     len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->frame_length = this->get_frame_length();
-            this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr;
+            this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
+            mprint("time synced at %d\n", this->time_offset);
             this->last_sync_time = millis();
             this->has_sync = true;
             this->print_frame_info();
@@ -515,7 +517,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         this->check_sync();
         mprint("starting to send TR...\n");
         uint32_t frame_start = millis();
-        uint16_t chosen_mini_slot = rand() % this->num_tr;
+        uint16_t chosen_mini_slot = 0; //rand() % this->num_tr;
         mprint("choosen at slot %d\n", chosen_mini_slot);
         // send a TR request
         // sleep at the last to ensure the timing 
@@ -546,7 +548,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         if(on_feedback_received)
             on_feedback_received(feedback);
 
-        if(send_command)
+        if(!send_command)
             return; // we are done
 
         // scan the TR results
@@ -897,8 +899,13 @@ void Server::recv_data(){
         }
         else{
             // ALOHA
+            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length, this->rf95->DQN_SLOW_CRC, NULL);
+            if(len > 0)
+                mprint("received data length %d\n", len);
         }
     }
+    // align up at the end
+    while(millis() < start_time + this->num_data_slot * this->data_length + DQN_GUARD);
 }
 
 
@@ -949,19 +956,23 @@ void Server::run(){
     while(true){
         // frame start
         uint32_t frame_start = millis();
+        mprint("frame start at %d\n", frame_start);
         this->receive_tr();
         while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
+        mprint("TR ended at %d\n", millis());
         uint32_t feedback_start = millis();
         // feedback frame
         mprint("sending feedback\n");
         this->send_feedback();
         while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
+        mprint("feedback ended at %d\n", millis());
         // data time
-        //this->recv_data();
+        this->recv_data();
+        mprint("data recv ended at %d\n", millis());
         // this is ACK time
-        //uint32_t ack_start = millis();
+        uint32_t ack_start = millis();
         //this->send_ack();
-        //while(millis() < ack_start + this->ack_length + DQN_GUARD);
+        while(millis() < ack_start + this->ack_length + DQN_GUARD);
 
     }
 }

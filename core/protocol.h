@@ -354,6 +354,7 @@ class Server: public RadioDevice{
         void reset_frame();
         void recv_data();
         uint16_t register_device(uint8_t *hw_addr);
+        void end_cycle();
 
     public:
         Server(uint32_t, 

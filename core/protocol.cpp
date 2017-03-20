@@ -112,28 +112,14 @@ struct dqn_tr* dqn_make_tr(
     return tr;
 }
 
-
 struct dqn_tr* dqn_make_tr_join(
-        struct dqn_tr* tr,
-        bool high_rate){
-    tr->version = DQN_VERSION | (DQN_MESSAGE_MASK & 2) | (high_rate << 2);
-    tr->messageid = DQN_MESSAGE_TR_JOIN;
-    tr->nodeid = 0; // undefined
-    tr->crc = 0;
-    uint8_t crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
-    tr->crc = crc;
-    return tr;
-}
-
-
-struct dqn_tr* dqn_make_join_req(
         struct dqn_tr* req,
         bool high_rate){
     req->version = DQN_VERSION;
     req->messageid = DQN_MESSAGE_TR_JOIN | (DQN_MESSAGE_MASK & 2) | (high_rate << 2); 
-    req->nodeid = 0;
+    req->nodeid = 0; // undefined
     req->crc = 0;
-    uint8_t crc = get_crc8((char*)req, sizeof(struct dqn_join_req));
+    uint8_t crc = get_crc8((char*)req, sizeof(struct dqn_tr));
     req->crc = crc;
     return req;  
 }
@@ -212,7 +198,6 @@ uint8_t dqn_recv(
             }
         }
     }
-
     return 0;
 }
 
@@ -485,7 +470,6 @@ void Node::sync(){
                     len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->frame_length = this->get_frame_length();
             this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
-            mprint("time synced at %d\n", this->time_offset);
             this->last_sync_time = millis();
             this->has_sync = true;
             this->print_frame_info();
@@ -500,10 +484,12 @@ void Node::check_sync(){
     if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync)
         this->sync();
     // determine the starting time for the upcoming frame
+    mprint("time offset %d\n", time_offset);
     uint32_t time_diff = millis() - this->time_offset;
     this->frame_length = this->get_frame_length();
     uint32_t remain_time = frame_length - (time_diff % this->frame_length);
     this->sleep(remain_time);
+    mprint("time now: %d\n", millis());
 }
 
 uint32_t Node::send(){
@@ -515,34 +501,40 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command){
     while(true) {
         this->check_sync();
+        mprint("time at %d\n", millis());
         mprint("starting to send TR...\n");
         uint32_t frame_start = millis();
-        uint16_t chosen_mini_slot = 0; //rand() % this->num_tr;
-        mprint("choosen at slot %d\n", chosen_mini_slot);
+        uint16_t chosen_mini_slot = 3; //rand() % this->num_tr;
+        mprint("choosen at slot %d tr messageid: %X\n", chosen_mini_slot, tr->messageid);
         // send a TR request
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
-        dqn_send(this->rf95, (uint8_t*)&tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
+        this->rf95->setPayloadLength(sizeof(struct dqn_tr));
+        dqn_send(this->rf95, (uint8_t*)tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
 
         // wait to see the feedback result
         uint32_t total_tr_time = DQN_TR_LENGTH * this->num_tr;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
         this->sleep(feedback_start_time - millis());
-
         // receive feedback.
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->feedback_length, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(feedback->version != DQN_VERSION && feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
             mprint("redeived non-feedback packet\n");
+            mprint("version: %d messageid: %d\n", feedback->version, feedback->messageid);
+            continue;
+        }
+        if(len == 0){
+            mprint("no feedback received\n");
             continue;
         }
 
         // set the clock and sync
-        this->time_offset = received_time - this->feedback_length;
-        this->has_sync = true;
-        this->last_sync_time = millis();
+        //this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
+        //this->has_sync = true;
+        //this->last_sync_time = millis();
 
         // call the feedback_received function
         if(on_feedback_received)
@@ -777,30 +769,9 @@ void Server::send_feedback(){
     uint8_t feedback_size = dqn_make_feedback((struct dqn_feedback*)this->_msg_buf, this->networkid, this->crq, this->dtq,
             frame_param, slots, this->num_tr, &this->bloom);
     // assuming the time is correct
-    dqn_send(this->rf95, &this->_msg_buf, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
+    dqn_send(this->rf95, this->_msg_buf, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
     
     print_feedback((struct dqn_feedback*)this->_msg_buf);
-    
-    // adjust the crq and dtq
-    for(int i = 0; i < this->num_tr; i++){
-        if(this->tr_status[i] == 0)
-            continue;
-        else if(this->tr_status[i] == 3)
-            this->crq++;
-        else
-            this->dtq += this->tr_status[i];
-    }
-
-    // decrease dtq and crq
-    if(this->crq > 0)
-        this->crq--;
-    if(this->dtq > this->num_data_slot)
-        this->dtq -= this->num_data_slot;
-    else
-        this->dtq = 0;
-    // dtq should match the actual queue length
-    if(this->dtq != this->dtqueue.size())
-        mprint("queue calculation is wrong. dtq: %d, dtqueue: %d\n", this->dtq, this->dtqueue.size());
 }
 
 void Server::reset_frame(){
@@ -832,12 +803,13 @@ void Server::receive_tr(){
         }
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
-        mprint("TR received at %d. Version: %X\n", i, tr->version);
+        mprint("TR received at %d. Version: %X message id: %X\n", i, tr->version, tr->messageid);
         uint8_t crc = tr->crc;
         tr->crc = 0;
         if(crc != get_crc8((char*)tr, sizeof(struct dqn_tr))){
             // there is a collision
             this->tr_status[i] = 3;
+            mprint("tr contension detected. received %X %X %X\n", this->_msg_buf[0], this->_msg_buf[1], this->_msg_buf[2]);
         } else {
             if(tr->version != DQN_VERSION){
                 mprint("DQN version is not correct. Expect: %d, got %d\n", DQN_VERSION, tr->version);
@@ -853,6 +825,7 @@ void Server::receive_tr(){
             }
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             uint8_t num_of_slots = meta & 3;
+            mprint("num of slots: %d\n", num_of_slots);
             this->tr_status[i] = num_of_slots;
             // push this to the dtqueue
 #ifdef ARDUINO
@@ -894,6 +867,10 @@ void Server::recv_data(){
             uint8_t num_of_slots = meta & 3;
             uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length,
                     high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
+            if(!hw_addr){
+                mprint("node id %d not found\n", nodeid);
+                continue;
+            }
             if(this->on_receive)
                 this->on_receive(this->_msg_buf, len, hw_addr);
         }
@@ -952,6 +929,30 @@ void Server::change_network_config(uint8_t trf, double fpp, int dtr, uint8_t mpl
     bloom_init_buf(&bloom, this->num_tr, this->bf_error, this->_bloom_buf); 
 }
 
+void Server::end_cycle(){
+    // adjust the crq and dtq
+    for(int i = 0; i < this->num_tr; i++){
+        if(this->tr_status[i] == 0)
+            continue;
+        else if(this->tr_status[i] == 3)
+            this->crq++;
+        else
+            this->dtq += this->tr_status[i];
+    }
+
+    // decrease dtq and crq
+    if(this->crq > 0)
+        this->crq--;
+    if(this->dtq > this->num_data_slot)
+        this->dtq -= this->num_data_slot;
+    else
+        this->dtq = 0;
+    // dtq should match the actual queue length
+    if(this->dtq != this->dtqueue.size())
+        mprint("queue calculation is wrong. dtq: %d, dtqueue: %d\n", this->dtq, this->dtqueue.size());
+
+}
+
 void Server::run(){
     while(true){
         // frame start
@@ -959,20 +960,16 @@ void Server::run(){
         mprint("frame start at %d\n", frame_start);
         this->receive_tr();
         while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
-        mprint("TR ended at %d\n", millis());
         uint32_t feedback_start = millis();
         // feedback frame
-        mprint("sending feedback\n");
         this->send_feedback();
         while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
-        mprint("feedback ended at %d\n", millis());
         // data time
         this->recv_data();
-        mprint("data recv ended at %d\n", millis());
         // this is ACK time
         uint32_t ack_start = millis();
         //this->send_ack();
         while(millis() < ack_start + this->ack_length + DQN_GUARD);
-
+        this->end_cycle();
     }
 }

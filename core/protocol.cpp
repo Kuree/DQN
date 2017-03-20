@@ -844,10 +844,36 @@ void Server::receive_tr(){
     }
 }
 
-void Server::recv_data(){
-    // Currently no ALOHA implementaiton
+void Server::recv_node(){
+    // this is definitely two slots
     uint32_t start_time = millis();
-    for(int i = 0; i < this->num_data_slot; i++){
+    // first slot is receiving
+    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length, this->rf95->DQN_SLOW_CRC, NULL);
+    if(len == 0){
+        mprint("no node registration received\n");
+        return;
+    } else if(len != sizeof(struct dqn_join_req)){
+        mprint("incorrect packet received. expected size: %d, received: %d\n", sizeof(struct dqn_join_req), len);
+        return;
+    }
+    struct dqn_join_req *req = (struct dqn_join_req*)this->_msg_buf;
+    if(req->version != DQN_VERSION){
+        mprint("version not correct. expected: %X received: %X\n", DQN_VERSION, req->version);
+        return;
+    }
+    uint8_t *hw_addr = req->hw_addr;
+    uint16_t nodeid = this->register_device(hw_addr);
+    // TODO:
+    // add skipping protocol overhead
+    while(millis() < this->data_length + start_time);
+    dqn_make_join_resp((struct dqn_join_resp*)this->_msg_buf, hw_addr, nodeid);
+    dqn_send(this->rf95, this->_msg_buf, sizeof(struct dqn_join_resp), this->rf95->DQN_SLOW_CRC);
+}
+
+void Server::recv_data(){
+    uint32_t start_time = millis();
+    int i = 0;
+    while(i < this->num_data_slot){
         // align the frame
         while(millis() < i * this->data_length + start_time);
         if(this->dtqueue.size()){
@@ -855,6 +881,12 @@ void Server::recv_data(){
             this->dtqueue.pop();
             // decode the message ID
             uint8_t messageid = request->messageid;
+            if(messageid == DQN_MESSAGE_JOIN_RESP){
+                this->recv_node();
+                i += 2;
+                continue;
+            }
+
             uint16_t nodeid = request->nodeid;
             uint8_t *hw_addr = this->node_table[nodeid];
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
@@ -862,6 +894,7 @@ void Server::recv_data(){
             bool high_rate = (meta >> 3) & 1;
             if(downstream) {
                 mprint("downstream not implemented\n");
+                i++;
                 continue;
             }
             uint8_t num_of_slots = meta & 3;
@@ -869,6 +902,7 @@ void Server::recv_data(){
                     high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
             if(!hw_addr){
                 mprint("node id %d not found\n", nodeid);
+                i++;
                 continue;
             }
             if(this->on_receive)
@@ -880,6 +914,8 @@ void Server::recv_data(){
             if(len > 0)
                 mprint("received data length %d\n", len);
         }
+
+        i++;
     }
     // align up at the end
     while(millis() < start_time + this->num_data_slot * this->data_length + DQN_GUARD);

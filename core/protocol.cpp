@@ -214,7 +214,7 @@ uint8_t dqn_recv(
 // will be removed later
 void print_byte(uint8_t byte){
     for(int i = 0; i < 8; i++){
-        const char *c = (!(byte & (1 << i)))? "0" : "1";
+        const char *c = (!(byte & (1 << (7 - i))))? "0" : "1";
         mprint(c);
     }
     mprint(" ");
@@ -520,10 +520,10 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->feedback_length, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
-        if(feedback->version != DQN_VERSION && feedback->messageid != DQN_MESSAGE_FEEDBACK){
+        if(len == 0 || feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
             mprint("redeived non-feedback packet\n");
-            mprint("version: %d messageid: %d\n", feedback->version, feedback->messageid);
+            mprint("len: %d, version: %d messageid: %d\n", len, feedback->version, feedback->messageid);
             continue;
         }
         if(len == 0){
@@ -532,9 +532,9 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         }
 
         // set the clock and sync
-        //this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
-        //this->has_sync = true;
-        //this->last_sync_time = millis();
+        this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
+        this->has_sync = true;
+        this->last_sync_time = millis();
 
         // call the feedback_received function
         if(on_feedback_received)
@@ -550,13 +550,16 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
             uint8_t status = (feedback->data[i / 4] >> (6 - ( i % 4) * 2)) & 0x3;
             if(i == chosen_mini_slot){
                 if(status == 0){
+                    mprint("TR not received by base station. retrying...\n");
                     break; // not received, trying to send again
                 } else if(status == 3 || status != num_of_slots){
+                    mprint("contention detected at the chosen slot %d, status %d\n", chosen_mini_slot, status);
                     // there is an contention
                     this->sleep(frame_length * crq);
                     // no need to sleep to next TR frame
                     // check_sync() will handle that 
                 } else {
+                    mprint("device enter DTQ\n");
                     uint8_t *bf = feedback->data + this->num_tr / 4;
                     size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here 
                     struct bloom bloom;
@@ -564,11 +567,11 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     // test if the node id is in the bloom filter
                     char node_id[10]; // enough for uint_16
                     sprintf(node_id, "%x", this->nodeid); 
-                    mprint("node id is %x", node_id);
-                    if(bloom_check(&bloom, node_id, strlen(node_id))){
+                    mprint("node id is %s\n", node_id);
+                    if(bloom_check(&bloom, node_id, strlen(node_id)) || (this->nodeid == 0 && send_command == DQN_SEND_REQUEST_JOIN)){
                         // enter DTQ
                         // sleep to the beginning of data slots
-                        uint32_t data_start_time = this->time_offset + total_tr_time +
+                        uint32_t data_start_time = frame_start + total_tr_time +
                             DQN_GUARD + this->feedback_length + DQN_GUARD;
                         this->sleep(millis() - data_start_time);
                         // frame counter is used to make sure we won't send data in protocol overhead
@@ -644,6 +647,7 @@ void Node::receive_data(int index){
 void Node::join_data(int index){
     if(index == 0) {
         // send join message
+        mprint("send joining message\n");
         struct dqn_join_req req;
         dqn_make_join_req(&req, this->hw_addr);
         dqn_send(this->rf95, &req, sizeof(struct dqn_join_req), this->rf95->DQN_RATE_FEEDBACK);
@@ -660,7 +664,7 @@ void Node::join_data(int index){
 void Node::join(){
     struct dqn_tr tr;
     dqn_make_tr_join(&tr, this->determine_rate());
-    this->send_request(&tr, 0, NULL, DQN_SEND_REQUEST_JOIN);
+    this->send_request(&tr, 2, NULL, DQN_SEND_REQUEST_JOIN);
 }
 
 uint32_t Node::send(bool *ack){
@@ -765,6 +769,7 @@ void Server::send_feedback(){
     for(int i = 0; i < this->num_tr; i++){
         slots[i/4] |= (this->tr_status[i] & 0x3) << (6 - (i % 4) * 2);
     }
+    mprint("\n");
     uint16_t frame_param = this->get_frame_param();
     uint8_t feedback_size = dqn_make_feedback((struct dqn_feedback*)this->_msg_buf, this->networkid, this->crq, this->dtq,
             frame_param, slots, this->num_tr, &this->bloom);
@@ -785,10 +790,6 @@ void Server::reset_frame(){
 }
 
 void Server::receive_tr(){
-    // reset all the tr status
-    for(int i = 0; i < this->num_tr; i++)
-        this->tr_status[i] = 0;
-
     // transmission will be in no header mode
     rf95->setPayloadLength(sizeof(struct dqn_tr));
     for(int i = 0; i < this->num_tr; i++){
@@ -803,12 +804,12 @@ void Server::receive_tr(){
         }
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
-        mprint("TR received at %d. Version: %X message id: %X\n", i, tr->version, tr->messageid);
+        mprint("TR received at %d. Version: %X message id: %X\n", i - 1, tr->version, tr->messageid);
         uint8_t crc = tr->crc;
         tr->crc = 0;
         if(crc != get_crc8((char*)tr, sizeof(struct dqn_tr))){
             // there is a collision
-            this->tr_status[i] = 3;
+            this->tr_status[i - 1] = 3;
             mprint("tr contension detected. received %X %X %X\n", this->_msg_buf[0], this->_msg_buf[1], this->_msg_buf[2]);
         } else {
             if(tr->version != DQN_VERSION){
@@ -825,8 +826,9 @@ void Server::receive_tr(){
             }
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             uint8_t num_of_slots = meta & 3;
-            mprint("num of slots: %d\n", num_of_slots);
-            this->tr_status[i] = num_of_slots;
+            this->tr_status[i- 1] = num_of_slots;
+            // TODO: fix -1 index
+            mprint("TR: %d num of slots: %d\n", i -1, this->tr_status[i-1]);
             // push this to the dtqueue
 #ifdef ARDUINO
             if(this->dtqueue.full()) {
@@ -881,7 +883,7 @@ void Server::recv_data(){
             this->dtqueue.pop();
             // decode the message ID
             uint8_t messageid = request->messageid;
-            if(messageid == DQN_MESSAGE_JOIN_RESP){
+            if(messageid == 0x92){ // fix this
                 this->recv_node();
                 i += 2;
                 continue;
@@ -924,7 +926,7 @@ void Server::recv_data(){
 
 uint16_t Server::register_device(uint8_t *hw_addr){
     // TODO:
-    // add cleaning stuff here
+    // add cleaning stuff here, i.e. GC)
     if(this->node_table_invert.count(hw_addr))
         return this->node_table_invert[hw_addr];
     uint16_t nodeid = fletcher16(hw_addr, HW_ADDR_LENGTH);
@@ -934,7 +936,8 @@ uint16_t Server::register_device(uint8_t *hw_addr){
     } // ensure it's unique
     this->node_table.insert(std::pair<uint16_t, uint8_t*>(nodeid, hw_addr));
     this->node_table_invert.insert(std::pair<uint8_t *, uint16_t>(hw_addr, nodeid));
-
+    mprint("assign nodeid: %d for HW: %X%X%X%X%X%X\n", nodeid,
+            hw_addr[0], hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
     return nodeid;
 }
 
@@ -987,6 +990,7 @@ void Server::end_cycle(){
     if(this->dtq != this->dtqueue.size())
         mprint("queue calculation is wrong. dtq: %d, dtqueue: %d\n", this->dtq, this->dtqueue.size());
 
+    this->reset_frame();
 }
 
 void Server::run(){

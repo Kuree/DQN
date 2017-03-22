@@ -275,6 +275,7 @@ class Node: public RadioDevice{
         uint16_t nodeid;
         bool has_sync;
         uint32_t last_sync_time;
+        uint32_t base_station_offset; // debugging purpose
         bool fast_rate;
         bool has_joined;
 

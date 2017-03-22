@@ -85,7 +85,7 @@ uint16_t dqn_make_feedback(
         struct bloom *bloom){
     feedback->version = DQN_VERSION;
     feedback->messageid = DQN_MESSAGE_FEEDBACK;
-    feedback->timestamp = (uint32_t)time(NULL);
+    feedback->timestamp = millis(); //(uint32_t)time(NULL);
     feedback->networkid = networkid;
     feedback->crq_length = crq_length;
     feedback->dtq_length = dtq_length;
@@ -470,6 +470,13 @@ void Node::sync(){
                     len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->frame_length = this->get_frame_length();
             this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
+            uint32_t timestamp = feedback->timestamp;
+            // ------ DEBUGING PURPOSE------
+            // compute the actual frame start time
+            uint32_t base_station_time = (timestamp - (DQN_GUARD + DQN_TR_LENGTH * this->num_tr));
+            this->base_station_offset = this->time_offset - base_station_time;
+            mprint("frame offset = %d base staiton time %d\n", this->base_station_offset, base_station_time);
+            // -------- END ----------------
             this->last_sync_time = millis();
             this->has_sync = true;
             this->print_frame_info();
@@ -509,6 +516,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // send a TR request
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
+        mprint("send request at base station time %d\n", millis() - this->base_station_offset);
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
         dqn_send(this->rf95, (uint8_t*)tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
 
@@ -998,6 +1006,7 @@ void Server::run(){
         // frame start
         uint32_t frame_start = millis();
         mprint("frame start at %d\n", frame_start);
+        mprint("expect TR at %d\n", frame_start + DQN_TR_LENGTH * 3);
         this->receive_tr();
         while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
         uint32_t feedback_start = millis();

@@ -12,9 +12,9 @@
 
 
 // define DQN timing
-#define DQN_GUARD 20
+#define DQN_GUARD 15
 #define DQN_SHORT_GUARD 5
-#define DQN_TR_LENGTH 150 // (150 + DQN_SHORT_GUARD)
+#define DQN_TR_LENGTH 150 //(150 + DQN_SHORT_GUARD)
 #define DQN_PREAMBLE 6
 
 // define DQN encodings
@@ -258,6 +258,7 @@ class RadioDevice{
         void parse_frame_param(
                 struct dqn_feedback *feedback);
         uint32_t get_feedback_length();
+        bool is_receiving();
 
     public:
         RH_RF95 *rf95;

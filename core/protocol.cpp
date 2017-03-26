@@ -193,7 +193,8 @@ uint8_t dqn_recv(
         if(rf95->available()){
             uint8_t len = RH_RF95_MAX_MESSAGE_LEN;
             if(rf95->recv(buf, &len)){
-                *received_time = millis();
+                if(received_time)
+                    *received_time = millis();
                 return len;
             }
         }
@@ -367,6 +368,10 @@ uint16_t RadioDevice::get_frame_param(){
 }
 
 
+bool RadioDevice::is_receiving(){
+    return this->rf95->mode() == RHGenericDriver::RHModeTx; 
+}
+
 uint32_t RadioDevice::get_feedback_length(){
     // assume you have everything else set up
     // may need to refactor it
@@ -397,7 +402,8 @@ uint32_t RadioDevice::get_frame_length(){
         this->feedback_length = this->get_feedback_length();
     }
     uint32_t total_time = tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD +
-        this->data_length * this->num_data_slot + DQN_GUARD + this->ack_length + DQN_GUARD;
+        this->data_length * this->num_data_slot + DQN_GUARD + this->ack_length + DQN_GUARD +
+        (this->num_tr + this->num_data_slot - 2) * DQN_SHORT_GUARD;
     return total_time;
 }
 
@@ -455,6 +461,8 @@ Node::Node(){
 
 void Node::sync(){
     // continuously listening till a valid feedbac is received
+    // switch mode
+    this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
     while(true){
         // trying to receive any packet
         uint8_t buf[255];
@@ -469,7 +477,8 @@ void Node::sync(){
             this->feedback_length = this->get_lora_air_time(DQN_FRAME_BW, DQN_FRAME_SF, DQN_PREAMBLE,
                     len, DQN_FRAME_CRC, DQN_FRAME_FIXED_LEN, DQN_FRAME_CR, DQN_FRAME_LOW_DR);
             this->frame_length = this->get_frame_length();
-            this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
+            this->time_offset = received_time - this->feedback_length - (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr 
+                + DQN_SHORT_GUARD - DQN_GUARD - 15; // this is a maigc fix
             uint32_t timestamp = feedback->timestamp;
             // ------ DEBUGING PURPOSE------
             // compute the actual frame start time
@@ -490,16 +499,15 @@ void Node::sync(){
 void Node::check_sync(){
     if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync)
         this->sync();
-    // determine the starting time for the upcoming frame
-    mprint("time offset %d\n", time_offset);
     // switch to TR mode
-    this->rf95->setModemConfig(this->rf95->Bw500Cr48Sf4096NoHeadNoCrc);
+    this->rf95->setModemConfig(this->rf95->DQN_SLOW_NOCRC);
+    
+    // determine the starting time for the upcoming frame
     uint32_t time_diff = millis() - this->time_offset;
-    this->frame_length = this->get_frame_length();
+    if(this->frame_length == 0)
+        mprint("ERROR!\n");
     uint32_t remain_time = frame_length - (time_diff % this->frame_length);
-    mprint("time now: %d sleep remain time: %d\n", millis(), remain_time);
     this->sleep(remain_time);
-    mprint("time now: %d\n", millis());
 }
 
 uint32_t Node::send(){
@@ -511,28 +519,29 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command){
     while(true) {
         this->check_sync();
-        mprint("time at %d\n", millis());
         mprint("starting to send TR...\n");
         uint32_t frame_start = millis();
         uint16_t chosen_mini_slot = 3; //rand() % this->num_tr;
         mprint("choosen at slot %d tr messageid: %X\n", chosen_mini_slot, tr->messageid);
         // send a TR request
         // sleep at the last to ensure the timing 
-        this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
+        this->sleep(frame_start + chosen_mini_slot * (DQN_TR_LENGTH + DQN_SHORT_GUARD) - millis());
         mprint("send request at base station time %d\n", millis() - this->base_station_offset);
-        uint32_t test_start_time = millis();
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
-        dqn_send(this->rf95, tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
-        while(this->rf95->mode() == RHGenericDriver::RHModeTx);
-        mprint("sending takes %d\n", millis() - test_start_time);
+        dqn_send(this->rf95, tr, sizeof(struct dqn_tr)); //, this->rf95->DQN_SLOW_NOCRC);
 
         // wait to see the feedback result
-        uint32_t total_tr_time = DQN_TR_LENGTH * this->num_tr;
+        uint32_t total_tr_time = (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr - DQN_SHORT_GUARD;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
+        
+        // switch to feedback mode
+        while(this->is_receiving()); // wait till the transmission is finished
+        this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
+        
         this->sleep(feedback_start_time - millis());
         // receive feedback.
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->feedback_length, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->feedback_length + DQN_GUARD, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(len == 0 || feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
@@ -546,7 +555,8 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         }
 
         // set the clock and sync
-        this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD;
+        // this is a magic fix
+        this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD - 15;
         this->has_sync = true;
         this->last_sync_time = millis();
 
@@ -574,6 +584,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     // check_sync() will handle that 
                 } else {
                     mprint("device enter DTQ\n");
+                    uint32_t test_start_time = millis();
                     uint8_t *bf = feedback->data + this->num_tr / 4;
                     size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here 
                     struct bloom bloom;
@@ -587,7 +598,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         // sleep to the beginning of data slots
                         uint32_t data_start_time = frame_start + total_tr_time +
                             DQN_GUARD + this->feedback_length + DQN_GUARD;
-                        this->sleep(millis() - data_start_time);
+                        this->sleep(data_start_time - millis());
                         // frame counter is used to make sure we won't send data in protocol overhead
                         int frame_counter = 0;
                         for(int i = 0; i < num_of_slots; i++){
@@ -604,15 +615,17 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                                         this->join_data(i);
                                         break;
                                 }
+                                this->sleep((data_slot_start + this->data_length + DQN_SHORT_GUARD) - millis());
                             } else {
-                                this->sleep(this->data_length);
+                                this->sleep(this->data_length + DQN_SHORT_GUARD);
                                 dtq--;
                             }
                             frame_counter++;
                             // avoid the protocol overhead
                             if(frame_counter % this->num_data_slot == this->num_data_slot - 1){
-                                uint32_t sleep_time = DQN_GUARD + this->ack_length + DQN_GUARD +
+                                uint32_t sleep_time = DQN_GUARD - DQN_SHORT_GUARD + this->ack_length + DQN_GUARD +
                                     total_tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD;
+                                mprint("skipped frame overhead\n");
                                 this->sleep(sleep_time);
                             }
                         }
@@ -622,6 +635,8 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         // check_sync() will handle that
                         this->sleep(frame_length * crq);
                     }
+                    // we finally finished!
+                    return;
                 }
 
             } else{
@@ -655,7 +670,7 @@ void Node::receive_data(int index){
     // TODO:
     // 1. fix the rate
     // 2. assemble them together
-    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length, NULL);
+    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
 }
 
 void Node::join_data(int index){
@@ -664,13 +679,20 @@ void Node::join_data(int index){
         mprint("send joining message\n");
         struct dqn_join_req req;
         dqn_make_join_req(&req, this->hw_addr);
+        mprint("sending join data at %d\n", millis());
         dqn_send(this->rf95, &req, sizeof(struct dqn_join_req), this->rf95->DQN_RATE_FEEDBACK);
     } else if(index == 1) {
         // receive join response
-        struct dqn_join_resp resp;
-        uint8_t len = dqn_recv(this->rf95, (uint8_t *)&resp, this->data_length, 
+        mprint("receiving joining data at %d\n", millis());
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, 
                 this->rf95->DQN_RATE_FEEDBACK, NULL);
-        this->nodeid = resp.nodeid;
+        if(len == 0){
+            mprint("could not receive joining information\n");
+            return;
+        }
+        struct dqn_join_resp *resp = (struct dqn_join_resp*)this->_msg_buf;
+        this->nodeid = resp->nodeid;
+        mprint("node id set to %d\n", this->nodeid);
         this->has_joined = true;
     }
 }
@@ -809,7 +831,7 @@ void Server::receive_tr(){
     for(int i = 0; i < this->num_tr; i++){
         // loop throw each TR slots
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, DQN_TR_LENGTH, 
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, DQN_TR_LENGTH + DQN_SHORT_GUARD, 
                 this->rf95->DQN_SLOW_NOCRC, &received_time);
         if(len != sizeof(struct dqn_tr)){
             if(len > 0)
@@ -818,8 +840,8 @@ void Server::receive_tr(){
         }
         // compute the actual index
         uint32_t start_time = received_time - 150; // TODO: change 150 to prefix value
-        int index = (start_time - tr_start_time) / DQN_TR_LENGTH;
-        mprint("actual index: %d offset %d\n", index, (start_time - tr_start_time) % DQN_TR_LENGTH);
+        int index = (start_time - tr_start_time) / (DQN_TR_LENGTH + DQN_SHORT_GUARD);
+        mprint("actual index: %d offset %d\n", index, (start_time - tr_start_time) % (DQN_TR_LENGTH + DQN_SHORT_GUARD));
 
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
@@ -869,7 +891,7 @@ void Server::recv_node(){
     // this is definitely two slots
     uint32_t start_time = millis();
     // first slot is receiving
-    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length, this->rf95->DQN_SLOW_CRC, NULL);
+    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, this->rf95->DQN_SLOW_CRC, NULL);
     if(len == 0){
         mprint("no node registration received\n");
         return;
@@ -886,7 +908,7 @@ void Server::recv_node(){
     uint16_t nodeid = this->register_device(hw_addr);
     // TODO:
     // add skipping protocol overhead
-    while(millis() < this->data_length + start_time);
+    while(millis() < this->data_length + DQN_SHORT_GUARD + start_time);
     dqn_make_join_resp((struct dqn_join_resp*)this->_msg_buf, hw_addr, nodeid);
     dqn_send(this->rf95, this->_msg_buf, sizeof(struct dqn_join_resp), this->rf95->DQN_SLOW_CRC);
 }
@@ -896,7 +918,7 @@ void Server::recv_data(){
     int i = 0;
     while(i < this->num_data_slot){
         // align the frame
-        while(millis() < i * this->data_length + start_time);
+        while(millis() < i * (this->data_length + DQN_SHORT_GUARD) + start_time);
         if(this->dtqueue.size()){
             struct dqn_data_request *request = this->dtqueue.front();
             this->dtqueue.pop();
@@ -919,7 +941,7 @@ void Server::recv_data(){
                 continue;
             }
             uint8_t num_of_slots = meta & 3;
-            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length,
+            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD,
                     high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
             if(!hw_addr){
                 mprint("node id %d not found\n", nodeid);
@@ -931,7 +953,8 @@ void Server::recv_data(){
         }
         else{
             // ALOHA
-            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length, this->rf95->DQN_SLOW_CRC, NULL);
+            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, 
+                    this->rf95->DQN_SLOW_CRC, NULL);
             if(len > 0)
                 mprint("received data length %d\n", len);
         }
@@ -939,7 +962,8 @@ void Server::recv_data(){
         i++;
     }
     // align up at the end
-    while(millis() < start_time + this->num_data_slot * this->data_length + DQN_GUARD);
+    while(millis() < start_time + this->num_data_slot * (this->data_length + DQN_SHORT_GUARD) + 
+            DQN_GUARD - DQN_SHORT_GUARD);
 }
 
 
@@ -952,6 +976,8 @@ uint16_t Server::register_device(uint8_t *hw_addr){
     while(true){
         if(this->node_table.count(nodeid))
             nodeid++;
+        else
+            break;
     } // ensure it's unique
     this->node_table.insert(std::pair<uint16_t, uint8_t*>(nodeid, hw_addr));
     this->node_table_invert.insert(std::pair<uint8_t *, uint16_t>(hw_addr, nodeid));
@@ -1017,10 +1043,11 @@ void Server::run(){
         // frame start
         uint32_t frame_start = millis();
         mprint("frame start at %d\n", frame_start);
-        mprint("expect TR at %d\n", frame_start + DQN_TR_LENGTH * 3);
+        mprint("expect TR at %d\n", frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * 3);
         this->receive_tr();
         this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
-        while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
+        while(millis() < frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr + 
+                DQN_GUARD - DQN_SHORT_GUARD);
         uint32_t feedback_start = millis();
         // feedback frame
         this->send_feedback();
@@ -1031,7 +1058,7 @@ void Server::run(){
         // this is ACK time
         uint32_t ack_start = millis();
         //this->send_ack();
-        this->rf95->setModemConfig(this->rf95->Bw500Cr48Sf4096NoHeadNoCrc);
+        this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
         while(millis() < ack_start + this->ack_length + DQN_GUARD);
         this->end_cycle();
     }

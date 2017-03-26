@@ -12,8 +12,9 @@
 
 
 // define DQN timing
-#define DQN_GUARD 15
-#define DQN_TR_LENGTH 150
+#define DQN_GUARD 20
+#define DQN_SHORT_GUARD 5
+#define DQN_TR_LENGTH 150 // (150 + DQN_SHORT_GUARD)
 #define DQN_PREAMBLE 6
 
 // define DQN encodings

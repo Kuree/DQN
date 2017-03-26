@@ -297,8 +297,8 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
     }
 
     // set the preamble
-    //rf95->setPreambleLength(DQN_PREAMBLE);
-    //mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
+    rf95->setPreambleLength(DQN_PREAMBLE);
+    mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
 
     rf95->setTxPower(23);
 
@@ -492,9 +492,12 @@ void Node::check_sync(){
         this->sync();
     // determine the starting time for the upcoming frame
     mprint("time offset %d\n", time_offset);
+    // switch to TR mode
+    this->rf95->setModemConfig(this->rf95->Bw500Cr48Sf4096NoHeadNoCrc);
     uint32_t time_diff = millis() - this->time_offset;
     this->frame_length = this->get_frame_length();
     uint32_t remain_time = frame_length - (time_diff % this->frame_length);
+    mprint("time now: %d sleep remain time: %d\n", millis(), remain_time);
     this->sleep(remain_time);
     mprint("time now: %d\n", millis());
 }
@@ -517,8 +520,11 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * DQN_TR_LENGTH - millis());
         mprint("send request at base station time %d\n", millis() - this->base_station_offset);
+        uint32_t test_start_time = millis();
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
-        dqn_send(this->rf95, (uint8_t*)tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
+        dqn_send(this->rf95, tr, sizeof(struct dqn_tr), this->rf95->DQN_SLOW_NOCRC);
+        while(this->rf95->mode() == RHGenericDriver::RHModeTx);
+        mprint("sending takes %d\n", millis() - test_start_time);
 
         // wait to see the feedback result
         uint32_t total_tr_time = DQN_TR_LENGTH * this->num_tr;
@@ -783,7 +789,6 @@ void Server::send_feedback(){
             frame_param, slots, this->num_tr, &this->bloom);
     // assuming the time is correct
     dqn_send(this->rf95, this->_msg_buf, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
-    
     print_feedback((struct dqn_feedback*)this->_msg_buf);
 }
 
@@ -800,6 +805,7 @@ void Server::reset_frame(){
 void Server::receive_tr(){
     // transmission will be in no header mode
     rf95->setPayloadLength(sizeof(struct dqn_tr));
+    uint32_t tr_start_time = millis();
     for(int i = 0; i < this->num_tr; i++){
         // loop throw each TR slots
         uint32_t received_time;
@@ -810,14 +816,19 @@ void Server::receive_tr(){
                 mprint("received a len: %d\n", len);
             continue;
         }
+        // compute the actual index
+        uint32_t start_time = received_time - 150; // TODO: change 150 to prefix value
+        int index = (start_time - tr_start_time) / DQN_TR_LENGTH;
+        mprint("actual index: %d offset %d\n", index, (start_time - tr_start_time) % DQN_TR_LENGTH);
+
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
-        mprint("TR received at %d. Version: %X message id: %X\n", i - 1, tr->version, tr->messageid);
+        mprint("TR received at %d (time: %d). Version: %X message id: %X\n", i, received_time, tr->version, tr->messageid);
         uint8_t crc = tr->crc;
         tr->crc = 0;
         if(crc != get_crc8((char*)tr, sizeof(struct dqn_tr))){
             // there is a collision
-            this->tr_status[i - 1] = 3;
+            this->tr_status[i] = 3;
             mprint("tr contension detected. received %X %X %X\n", this->_msg_buf[0], this->_msg_buf[1], this->_msg_buf[2]);
         } else {
             if(tr->version != DQN_VERSION){
@@ -834,9 +845,9 @@ void Server::receive_tr(){
             }
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             uint8_t num_of_slots = meta & 3;
-            this->tr_status[i- 1] = num_of_slots;
+            this->tr_status[i] = num_of_slots;
             // TODO: fix -1 index
-            mprint("TR: %d num of slots: %d\n", i -1, this->tr_status[i-1]);
+            mprint("TR: %d num of slots: %d\n", i, this->tr_status[i]);
             // push this to the dtqueue
 #ifdef ARDUINO
             if(this->dtqueue.full()) {
@@ -1008,16 +1019,19 @@ void Server::run(){
         mprint("frame start at %d\n", frame_start);
         mprint("expect TR at %d\n", frame_start + DQN_TR_LENGTH * 3);
         this->receive_tr();
+        this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
         while(millis() < frame_start + DQN_TR_LENGTH * this->num_tr + DQN_GUARD);
         uint32_t feedback_start = millis();
         // feedback frame
         this->send_feedback();
+        this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
         while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
         // data time
         this->recv_data();
         // this is ACK time
         uint32_t ack_start = millis();
         //this->send_ack();
+        this->rf95->setModemConfig(this->rf95->Bw500Cr48Sf4096NoHeadNoCrc);
         while(millis() < ack_start + this->ack_length + DQN_GUARD);
         this->end_cycle();
     }

@@ -521,7 +521,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         this->check_sync();
         mprint("starting to send TR at time %d with offset %d...\n", millis(), this->time_offset);
         uint32_t frame_start = millis();
-        uint16_t chosen_mini_slot = 3; //rand() % this->num_tr;
+        uint16_t chosen_mini_slot = rand() % this->num_tr;
         mprint("choosen at slot %d tr messageid: %X\n", chosen_mini_slot, tr->messageid);
         // send a TR request
         // sleep at the last to ensure the timing 
@@ -842,15 +842,25 @@ void Server::receive_tr(){
                 mprint("received a len: %d\n", len);
             continue;
         }
+        
+        // correct index if it was sent a little bit early
+        // TODO: this may cause the next one being missed
+        int index = i;
+        uint32_t offset = DQN_TR_LENGTH + DQN_SHORT_GUARD - 
+            (received_time - tr_start_time) % (DQN_TR_LENGTH + DQN_SHORT_GUARD);
+        if(offset > 7){
+            index--;
+            mprint("offset:%d\n", offset);
+        }
 
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
-        mprint("TR received at %d (time: %d). Version: %X message id: %X\n", i, received_time, tr->version, tr->messageid);
+        mprint("TR received at %d (time: %d). Version: %X message id: %X\n", index, received_time, tr->version, tr->messageid);
         uint8_t crc = tr->crc;
         tr->crc = 0;
         if(crc != get_crc8((char*)tr, sizeof(struct dqn_tr))){
             // there is a collision
-            this->tr_status[i] = 3;
+            this->tr_status[index] = 3;
             mprint("tr contension detected. received %X %X %X\n", this->_msg_buf[0], this->_msg_buf[1], this->_msg_buf[2]);
         } else {
             if(tr->version != DQN_VERSION){
@@ -879,8 +889,8 @@ void Server::receive_tr(){
             }
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             uint8_t num_of_slots = meta & 3;
-            this->tr_status[i] = num_of_slots;
-            mprint("TR: %d num of slots: %d\n", i, this->tr_status[i]);
+            this->tr_status[index] = num_of_slots;
+            mprint("TR: %d num of slots: %d\n", index, this->tr_status[index]);
             // push this to the dtqueue
 #ifdef ARDUINO
             if(this->dtqueue.full()) {

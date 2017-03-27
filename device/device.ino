@@ -6,8 +6,7 @@ Node* node;
 
 void setup() {
     node = new (__node_buf)Node();
-    //node->check_sync();
-    mprint("joinging the network\n");
+    mprint("joining the network\n");
     node->join();
 }
 

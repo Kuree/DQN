@@ -167,7 +167,6 @@ void bloom_reset(struct bloom *bloom){
 void bloom_load(
         struct bloom * bloom,
         unsigned char *bits, 
-        size_t size,  
         int entries,  
         double error){
     bloom_init(bloom, entries, error);

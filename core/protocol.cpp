@@ -587,7 +587,9 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     uint8_t *bf = feedback->data + this->num_tr / 4;
                     size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here 
                     struct bloom bloom;
-                    bloom_load(&bloom, bf, bloom_size, this->num_tr, DQN_BF_ERROR);
+                    bloom_load(&bloom, bf, this->num_tr, DQN_BF_ERROR);
+                    if(bloom.bytes != bloom_size)
+                        mprint("\t something went wrong\n");
                     // test if the node id is in the bloom filter
                     char node_id[10]; // enough for uint_16
                     sprintf(node_id, "%x", this->nodeid); 
@@ -861,9 +863,21 @@ void Server::receive_tr(){
                 continue;
             }
             uint8_t messageid = tr->messageid;
-            // TODO:
+            
             // check if node id is valid
             uint16_t nodeid = tr->nodeid;
+            // TODO: also need to check if it's join process
+            if(nodeid != 0 && this->node_table.find(nodeid) == this->node_table.end()){
+                mprint("Invalid node id %d\n", nodeid);
+                continue;
+            } else {
+                // add it to bloom filter
+                char node_id[10]; // enough for uint_16
+                sprintf(node_id, "%x", nodeid);
+                bloom_add(&this->bloom, node_id, strlen(node_id));
+            }
+
+            
             if(messageid & DQN_MESSAGE_TR != DQN_MESSAGE_TR){
                 mprint("Invalid message id %d\n", messageid);
                 continue;
@@ -871,7 +885,6 @@ void Server::receive_tr(){
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             uint8_t num_of_slots = meta & 3;
             this->tr_status[i] = num_of_slots;
-            // TODO: fix -1 index
             mprint("TR: %d num of slots: %d\n", i, this->tr_status[i]);
             // push this to the dtqueue
 #ifdef ARDUINO

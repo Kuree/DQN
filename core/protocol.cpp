@@ -519,7 +519,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command){
     while(true) {
         this->check_sync();
-        mprint("starting to send TR...\n");
+        mprint("starting to send TR at time %d with offset %d...\n", millis(), this->time_offset);
         uint32_t frame_start = millis();
         uint16_t chosen_mini_slot = 3; //rand() % this->num_tr;
         mprint("choosen at slot %d tr messageid: %X\n", chosen_mini_slot, tr->messageid);
@@ -556,7 +556,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
 
         // set the clock and sync
         // this is a magic fix
-        this->time_offset = received_time - this->feedback_length - DQN_TR_LENGTH * this->num_tr - DQN_GUARD - 15;
+        this->time_offset = received_time - this->feedback_length - total_tr_time - DQN_GUARD - 15;
         this->has_sync = true;
         this->last_sync_time = millis();
 
@@ -583,7 +583,6 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     // no need to sleep to next TR frame
                     // check_sync() will handle that 
                 } else {
-                    mprint("device enter DTQ\n");
                     uint32_t test_start_time = millis();
                     uint8_t *bf = feedback->data + this->num_tr / 4;
                     size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here 
@@ -594,6 +593,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     sprintf(node_id, "%x", this->nodeid); 
                     mprint("node id is %s\n", node_id);
                     if(bloom_check(&bloom, node_id, strlen(node_id)) || (this->nodeid == 0 && send_command == DQN_SEND_REQUEST_JOIN)){
+                        mprint("device enter DTQ\n");
                         // enter DTQ
                         // sleep to the beginning of data slots
                         uint32_t data_start_time = frame_start + total_tr_time +
@@ -606,6 +606,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                                 uint32_t data_slot_start = millis();
                                 switch(send_command){
                                     case DQN_SEND_REQUEST_UP:
+                                        mprint("\tsending data up...\n");
                                         this->send_data(i);
                                         break;
                                     case DQN_SEND_REQUEST_DOWN:
@@ -633,9 +634,11 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         // enter CRQ
                         // no need to sleep to the start of the frame
                         // check_sync() will handle that
-                        this->sleep(frame_length * crq);
+                        mprint("device enter CRQ\n");
+                        this->sleep(this->frame_length * crq); // next time it will aligned into frame automically
                     }
                     // we finally finished!
+                    mprint("entire process takes %d total with send command %d\n", millis() - test_start_time, send_command);
                     return;
                 }
 
@@ -943,13 +946,21 @@ void Server::recv_data(){
             uint8_t num_of_slots = meta & 3;
             uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD,
                     high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
+            // TODO: clean this up
             if(!hw_addr){
                 mprint("node id %d not found\n", nodeid);
                 i++;
                 continue;
             }
-            if(this->on_receive)
+            if(!len){
+                mprint("no message received from nodeid%d\n", nodeid);
+                i++;
+                continue;
+            }
+            if(this->on_receive) {
                 this->on_receive(this->_msg_buf, len, hw_addr);
+                i++;
+            }
         }
         else{
             // ALOHA

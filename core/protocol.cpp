@@ -593,9 +593,8 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     // test if the node id is in the bloom filter
                     char node_id[10]; // enough for uint_16
                     sprintf(node_id, "%x", this->nodeid); 
-                    mprint("node id is %s\n", node_id);
                     if(bloom_check(&bloom, node_id, strlen(node_id)) || (this->nodeid == 0 && send_command == DQN_SEND_REQUEST_JOIN)){
-                        mprint("device enter DTQ\n");
+                        mprint("device enter DTQ with dtq: %d\n", dtq);
                         // enter DTQ
                         // sleep to the beginning of data slots
                         uint32_t data_start_time = frame_start + total_tr_time +
@@ -843,10 +842,6 @@ void Server::receive_tr(){
                 mprint("received a len: %d\n", len);
             continue;
         }
-        // compute the actual index
-        uint32_t start_time = received_time - 150; // TODO: change 150 to prefix value
-        int index = (start_time - tr_start_time) / (DQN_TR_LENGTH + DQN_SHORT_GUARD);
-        mprint("actual index: %d offset %d\n", index, (start_time - tr_start_time) % (DQN_TR_LENGTH + DQN_SHORT_GUARD));
 
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;

@@ -45,7 +45,9 @@
 
 // define sync
 #define DQN_SYNC_INTERVAL           36000000    // 10 hours
-
+// define retry times
+// value for testing only.
+#define DQN_SYNC_RETRY              2 // if it fails twice receiving feedback, we need to re-sync. 
 // define hardware information
 #define HW_ADDR_LENGTH      6
 
@@ -280,6 +282,7 @@ class Node: public RadioDevice{
         uint32_t base_station_offset; // debugging purpose
         bool fast_rate;
         bool has_joined;
+        uint16_t retry_count;
 
         bool determine_rate();
         void enter_crq(uint32_t);
@@ -313,13 +316,12 @@ class Node: public RadioDevice{
         uint32_t receive_feedback(struct dqn_feedback *feedback);
         uint32_t send();
         uint32_t send(bool *ack);
-        void add_data_queue(void *data, size_t size);
-        void request_nodeid();
         uint32_t recv();
         void sleep(uint32_t time);
         void join();
         void check_sync();
         bool add_data_to_send(uint8_t * data, uint8_t size);
+        uint16_t mpl();
 };
 
 class Server: public RadioDevice{

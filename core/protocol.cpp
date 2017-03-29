@@ -488,6 +488,7 @@ void Node::sync(){
             // -------- END ----------------
             this->last_sync_time = millis();
             this->has_sync = true;
+            this->retry_count = 0;
             this->print_frame_info();
             break;
         }
@@ -497,7 +498,7 @@ void Node::sync(){
 
 
 void Node::check_sync(){
-    if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync)
+    if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync || this->retry_count >= DQN_SYNC_RETRY)
         this->sync();
     // switch to TR mode
     this->rf95->setModemConfig(this->rf95->DQN_SLOW_NOCRC);
@@ -543,14 +544,16 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->feedback_length + DQN_GUARD, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
-        if(len == 0 || feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
+        if(feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
             mprint("redeived non-feedback packet\n");
             mprint("len: %d, version: %d messageid: %d\n", len, feedback->version, feedback->messageid);
+            this->retry_count++;
             continue;
         }
         if(len == 0){
             mprint("no feedback received\n");
+            this->retry_count++;
             continue;
         }
 
@@ -575,6 +578,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
             if(i == chosen_mini_slot){
                 if(status == 0){
                     mprint("TR not received by base station. retrying...\n");
+                    this->retry_count++;
                     break; // not received, trying to send again
                 } else if(status == 3 || status != num_of_slots){
                     mprint("contention detected at the chosen slot %d, status %d\n", chosen_mini_slot, status);
@@ -639,7 +643,6 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         this->sleep(this->frame_length * crq); // next time it will aligned into frame automically
                     }
                     // we finally finished!
-                    mprint("entire process takes %d total with send command %d\n", millis() - test_start_time, send_command);
                     return;
                 }
 
@@ -663,9 +666,15 @@ void Node::send_data(int index){
         while(1);
     }
     struct dqn_node_message message = this->message_queue.front();
-    this->message_queue.pop();
     uint8_t * data = message.data;
     uint8_t size = message.size;
+    if(index == 1) {
+        this->message_queue.pop();
+        data += this->max_payload;
+        size -= this->max_payload;
+    } else{
+        size = size > this->max_payload? this->max_payload : size;
+    }
     dqn_send(this->rf95, data, size, this->rf95->DQN_SLOW_CRC);
 }
 
@@ -713,7 +722,9 @@ uint32_t Node::send(bool *ack){
         return 0;
     struct dqn_node_message message = this->message_queue.front();
     uint8_t size = message.size;
-    uint8_t num_of_slots = size / this->max_payload + 1; 
+    uint8_t num_of_slots = size / this->max_payload;
+    if(size % this->max_payload != 0)
+        num_of_slots++;
     struct dqn_tr tr;
     dqn_make_tr(&tr, num_of_slots, this->determine_rate(), this->nodeid);
 
@@ -767,6 +778,10 @@ bool Node::determine_rate(){
     return false;
     //int rssi = this->rf95->lastRssi();
     //return rssi >= -10;
+}
+
+uint16_t Node::mpl(){
+    return this->max_payload;
 }
 
 void Node::sleep(uint32_t time){
@@ -925,7 +940,9 @@ void Server::recv_node(){
         mprint("version not correct. expected: %X received: %X\n", DQN_VERSION, req->version);
         return;
     }
-    uint8_t *hw_addr = req->hw_addr;
+    // copy it to another memory table
+    uint8_t *hw_addr = this->_hw_addr_buf + this->node_table.size() * HW_ADDR_LENGTH;
+    memcpy(hw_addr, req->hw_addr, HW_ADDR_LENGTH);
     uint16_t nodeid = this->register_device(hw_addr);
     // TODO:
     // add skipping protocol overhead
@@ -962,22 +979,29 @@ void Server::recv_data(){
                 continue;
             }
             uint8_t num_of_slots = meta & 3;
-            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD,
-                    high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
-            // TODO: clean this up
-            if(!hw_addr){
-                mprint("node id %d not found\n", nodeid);
+            uint8_t total_len = 0;
+            // used to continuously fill in the buffer
+            uint8_t *data_buf = this->_msg_buf;
+            for(int index = 0; index < num_of_slots; index++){
+                uint8_t len = dqn_recv(this->rf95, data_buf, this->data_length + DQN_SHORT_GUARD,
+                        high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
+                if(!hw_addr){
+                    mprint("node id %d not found\n", nodeid);
+                    i++;
+                    break;
+                }
+                if(!len){
+                    mprint("no message received from nodeid%d\n", nodeid);
+                } else {
+                    total_len += len;
+                    data_buf += len;
+                }
+                
                 i++;
-                continue;
             }
-            if(!len){
-                mprint("no message received from nodeid%d\n", nodeid);
-                i++;
-                continue;
-            }
-            if(this->on_receive) {
-                this->on_receive(this->_msg_buf, len, hw_addr);
-                i++;
+
+            if(total_len && this->on_receive) {
+                this->on_receive(this->_msg_buf, total_len, hw_addr);
             }
         }
         else{
@@ -1010,7 +1034,7 @@ uint16_t Server::register_device(uint8_t *hw_addr){
     } // ensure it's unique
     this->node_table.insert(std::pair<uint16_t, uint8_t*>(nodeid, hw_addr));
     this->node_table_invert.insert(std::pair<uint8_t *, uint16_t>(hw_addr, nodeid));
-    mprint("assign nodeid: %d for HW: %X%X%X%X%X%X\n", nodeid,
+    mprint("assign nodeid: %d for HW: %X:%X:%X:%X:%X:%X\n", nodeid,
             hw_addr[0], hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
     return nodeid;
 }
@@ -1071,8 +1095,7 @@ void Server::run(){
     while(true){
         // frame start
         uint32_t frame_start = millis();
-        mprint("frame start at %d\n", frame_start);
-        mprint("expect TR at %d\n", frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * 3);
+        //mprint("frame start at %d\n", frame_start);
         this->receive_tr();
         this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
         while(millis() < frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr + 

@@ -31,7 +31,7 @@ void print_packet(uint8_t *data, int length){
 }
 
 void print_message(uint8_t* data, size_t size, uint8_t* hw_addr){
-    mprint("%X:%X:%X:%X:%X:%X send a message\n",
+    mprint("%X:%X:%X:%X:%X:%X sent a message\n",
             hw_addr[0], hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
     print_packet(data, size);
 }

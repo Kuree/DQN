@@ -14,7 +14,7 @@
 // define DQN timing
 #define DQN_GUARD 15
 #define DQN_SHORT_GUARD 5
-#define DQN_TR_LENGTH 150 //(150 + DQN_SHORT_GUARD)
+#define DQN_TR_LENGTH 150 
 #define DQN_PREAMBLE 6
 
 // define DQN encodings
@@ -101,6 +101,7 @@ using namespace std;
 #define DQN_DEVICE_QUEUE_SIZE 255 
 #define DQN_SERVER_MAX_TR 256
 #define DQN_SERVER_MAX_BLOOM 256
+#define DQN_SERVER_MAX_DATA_SLOT 256
 #define DQN_NODE_CAPACITY 256 // may increase this size later
 #define DQN_MESSAGE_QUEUE_SIZE 10
 
@@ -301,8 +302,7 @@ class Node: public RadioDevice{
         void ctor(uint8_t *hw_addr);
 
         // this is for all the communication requests to the base station
-        // TODO: refactor the code for sync, send, and join
-        void send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
+        uint16_t send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
                 void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command);
 
         void send_data(int index);
@@ -334,7 +334,7 @@ class Server: public RadioDevice{
         uint8_t _bloom_buf[DQN_SERVER_MAX_BLOOM];
         uint8_t _tr_data_buf[sizeof(struct dqn_data_request) * DQN_SERVER_MAX_TR];
         uint8_t _hw_addr_buf[HW_ADDR_LENGTH * DQN_NODE_CAPACITY];
-
+        uint8_t ack_buf[DQN_SERVER_MAX_DATA_SLOT / 8];
 
 #ifdef ARDUINO
         queue<struct dqn_data_request *, DQN_DEVICE_QUEUE_SIZE> dtqueue;

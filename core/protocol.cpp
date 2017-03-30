@@ -465,10 +465,9 @@ void Node::sync(){
     this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
     while(true){
         // trying to receive any packet
-        uint8_t buf[255];
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
-        struct dqn_feedback *feedback = (struct dqn_feedback*)buf;
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
             // we find the actual feedback
             // now we need to compute the offset
@@ -516,7 +515,7 @@ uint32_t Node::send(){
 }
 
 
-void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
+uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
         void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command){
     while(true) {
         this->check_sync();
@@ -568,7 +567,7 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
             on_feedback_received(feedback);
 
         if(!send_command)
-            return; // we are done
+            return 0; // we are done
 
         // scan the TR results
         uint16_t dtq = feedback->dtq_length;
@@ -591,9 +590,12 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     uint8_t *bf = feedback->data + this->num_tr / 4;
                     size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here 
                     struct bloom bloom;
+                    uint16_t dtq_copy = dtq;
                     bloom_load(&bloom, bf, this->num_tr, DQN_BF_ERROR);
-                    if(bloom.bytes != bloom_size)
-                        mprint("\t something went wrong\n");
+                    if(bloom.bytes != bloom_size) {
+                        mprint("\t something went wrong: bloom filter size does not match\n");
+                        while(1);
+                    }
                     // test if the node id is in the bloom filter
                     char node_id[10]; // enough for uint_16
                     sprintf(node_id, "%x", this->nodeid); 
@@ -606,19 +608,19 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         this->sleep(data_start_time - millis());
                         // frame counter is used to make sure we won't send data in protocol overhead
                         int frame_counter = 0;
-                        for(int i = 0; i < num_of_slots; i++){
+                        for(int j = 0; j < num_of_slots; j++){
                             if(!dtq){
                                 uint32_t data_slot_start = millis();
                                 switch(send_command){
                                     case DQN_SEND_REQUEST_UP:
                                         mprint("\tsending data up...\n");
-                                        this->send_data(i);
+                                        this->send_data(j);
                                         break;
                                     case DQN_SEND_REQUEST_DOWN:
-                                        this->receive_data(i);
+                                        this->receive_data(j);
                                         break;
                                     case DQN_SEND_REQUEST_JOIN:
-                                        this->join_data(i);
+                                        this->join_data(j);
                                         break;
                                 }
                                 this->sleep((data_slot_start + this->data_length + DQN_SHORT_GUARD) - millis());
@@ -643,7 +645,8 @@ void Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         this->sleep(this->frame_length * crq); // next time it will aligned into frame automically
                     }
                     // we finally finished!
-                    return;
+                    // return the starting data slot number
+                    return dtq_copy % this->num_data_slot;
                 }
 
             } else{
@@ -729,15 +732,29 @@ uint32_t Node::send(bool *ack){
     dqn_make_tr(&tr, num_of_slots, this->determine_rate(), this->nodeid);
 
     // call the generic send function
-    this->send_request(&tr, num_of_slots, NULL, DQN_SEND_REQUEST_UP);
+    uint16_t slot_number = this->send_request(&tr, num_of_slots, NULL, DQN_SEND_REQUEST_UP);
 
     // see if we need to listen to ack
-    // this is on pitfall:
+    // TODO: this is on pitfall:
     //      there is a rare cases where sending data will span two frames
     //      need to be extra careful about this one.
     if(ack != NULL){
-        // notice that offset set to the beginning of the frame
-        // TODO: add ack
+        // need to set offset to the beginning of the ACK frame
+        uint16_t ack_relative_time = this->frame_length - DQN_GUARD - this->ack_length;
+        this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
+        uint16_t current_time = (millis() - this->time_offset) % this->frame_length;
+        uint16_t sleep_time = ack_relative_time - current_time;
+        mprint("sleep for ack: %d\n", sleep_time);
+        this->sleep(sleep_time);
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->ack_length + DQN_GUARD);
+        if(len != this->num_data_slot / 8){
+            mprint("error in receiving ack. expected size: %d received: %d\n", this->num_data_slot / 8, len);
+        } else {
+            *ack = this->_msg_buf[slot_number / 8] >> (slot_number % 8);
+            if(num_of_slots == 2){
+                *ack &= this->_msg_buf[(slot_number + 1) / 8] >> ((slot_number + 1) % 8);
+            }
+        }
     }
 
     return size; 
@@ -810,9 +827,7 @@ Server::Server(uint32_t networkid,
 }
 
 void Server::send_ack(){
-    // TODO:
-    // implement ACK
-
+    dqn_send(this->rf95, this->ack_buf, this->num_data_slot / 8);
 }
 
 void Server::send_feedback(){
@@ -831,6 +846,7 @@ void Server::send_feedback(){
     // assuming the time is correct
     dqn_send(this->rf95, this->_msg_buf, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
     print_feedback((struct dqn_feedback*)this->_msg_buf);
+    
 }
 
 void Server::reset_frame(){
@@ -840,7 +856,12 @@ void Server::reset_frame(){
     }
 
     // reset the bloom filter
-    bloom_reset(&this->bloom); 
+    bloom_reset(&this->bloom);
+    
+    // reset the ACK
+    for(int i = 0; i < this->num_data_slot / 8; i++){
+        this->ack_buf[i] = 0;
+    }
 }
 
 void Server::receive_tr(){
@@ -995,6 +1016,8 @@ void Server::recv_data(){
                 } else {
                     total_len += len;
                     data_buf += len;
+                    // set the ACK bit
+                    this->ack_buf[i / 8] |= 1 << (i % 8);
                 }
                 
                 i++;
@@ -1109,7 +1132,7 @@ void Server::run(){
         this->recv_data();
         // this is ACK time
         uint32_t ack_start = millis();
-        //this->send_ack();
+        this->send_ack();
         this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
         while(millis() < ack_start + this->ack_length + DQN_GUARD);
         this->end_cycle();

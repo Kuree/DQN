@@ -19,6 +19,8 @@ void loop() {
       data[i] = i;
     }
     node->add_data_to_send(data, data_size);
-    node->send();
+    bool ack;
+    node->send(&ack);
+    mprint("data has sent with ACK: %s\n", ack?"true":"false");
 }
 

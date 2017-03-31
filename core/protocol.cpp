@@ -112,6 +112,21 @@ struct dqn_tr* dqn_make_tr(
     return tr;
 }
 
+struct dqn_tr* dqn_make_tr_down(
+        struct dqn_tr* tr, 
+        uint8_t num_of_slots,
+        bool high_rate,
+        uint16_t nodeid){
+    tr->version = DQN_VERSION;
+    tr->messageid = DQN_MESSAGE_TR | (DQN_MESSAGE_MASK & num_of_slots) | (high_rate << 2);
+    tr->nodeid = nodeid;
+    tr->crc = 0;
+    uint8_t crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
+    tr->crc = crc;
+    return tr;
+}
+
+
 struct dqn_tr* dqn_make_tr_join(
         struct dqn_tr* req,
         bool high_rate){
@@ -224,6 +239,16 @@ void print_byte(uint8_t byte){
 uint16_t get_tr(uint16_t frame_param){
     uint16_t trf = (frame_param >> 2) & 0x3F;
     return 16 + 8 * trf;
+}
+
+void print_ack(uint8_t *ack, size_t size){
+    mprint("------------ACK---------------\n");
+    for(int i = 0; i < size; i++){
+        print_byte(ack[i]);
+        if(i % 4 == 3)
+            mprint("\n");
+    }
+    mprint("------------------------------\n");
 }
 
 void print_feedback(struct dqn_feedback* feedback){
@@ -677,6 +702,8 @@ void Node::send_data(int index){
         size -= this->max_payload;
     } else{
         size = size > this->max_payload? this->max_payload : size;
+        if (size < this->max_payload)
+            this->message_queue.pop();
     }
     dqn_send(this->rf95, data, size, this->rf95->DQN_SLOW_CRC);
 }
@@ -685,8 +712,21 @@ void Node::send_data(int index){
 void Node::receive_data(int index){
     // TODO:
     // 1. fix the rate
-    // 2. assemble them together
-    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
+    // always request 2 data slots
+    if(index == 0){
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, 
+                this->rf95->DQN_SLOW_CRC, NULL);
+    } else {
+        // assume the first slot is always full
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf + this->max_payload, 
+                this->data_length + DQN_SHORT_GUARD, this->rf95->DQN_SLOW_CRC, NULL);
+        if(this->on_receive)
+            this->on_receive(this->_msg_buf, len);
+    }
+}
+
+void Node::set_on_receive(void (*on_receive)(uint8_t*, uint8_t)){
+    this->on_receive = on_receive;
 }
 
 void Node::join_data(int index){
@@ -719,6 +759,13 @@ void Node::join(){
     this->send_request(&tr, 2, NULL, DQN_SEND_REQUEST_JOIN);
 }
 
+void Node::recv(){
+    struct dqn_tr tr;
+    // TODO: fix this
+    dqn_make_tr_down(&tr, 2, this->determine_rate(), this->nodeid);
+    this->send_request(&tr, 2, NULL, DQN_SEND_REQUEST_DOWN);
+}
+
 uint32_t Node::send(bool *ack){
     // peak the queue
     if(!this->message_queue.size())
@@ -739,6 +786,7 @@ uint32_t Node::send(bool *ack){
     //      there is a rare cases where sending data will span two frames
     //      need to be extra careful about this one.
     if(ack != NULL){
+        *ack = false;
         // need to set offset to the beginning of the ACK frame
         uint16_t ack_relative_time = this->frame_length - DQN_GUARD - this->ack_length;
         this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
@@ -747,12 +795,15 @@ uint32_t Node::send(bool *ack){
         mprint("sleep for ack: %d\n", sleep_time);
         this->sleep(sleep_time);
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->ack_length + DQN_GUARD);
-        if(len != this->num_data_slot / 8){
-            mprint("error in receiving ack. expected size: %d received: %d\n", this->num_data_slot / 8, len);
+        size_t expected = this->num_data_slot / 8;
+        if(this->num_data_slot % 8)
+            expected++;
+        if(len != expected){
+            mprint("error in receiving ack. expected size: %d received: %d\n", expected, len);
         } else {
-            *ack = this->_msg_buf[slot_number / 8] >> (slot_number % 8);
+            *ack = (this->_msg_buf[slot_number / 8] >> (slot_number % 8)) & 1;
             if(num_of_slots == 2){
-                *ack &= this->_msg_buf[(slot_number + 1) / 8] >> ((slot_number + 1) % 8);
+                *ack &= (this->_msg_buf[(slot_number + 1) / 8] >> ((slot_number + 1) % 8)) & 1;
             }
         }
     }
@@ -810,7 +861,7 @@ void Node::sleep(uint32_t time){
 
 Server::Server(uint32_t networkid,
         void (*on_receive)(uint8_t*, size_t, uint8_t*),
-        void (*on_download)(uint8_t*, uint8_t*, size_t*)){
+        uint16_t (*on_download)(uint8_t*, uint8_t*, uint8_t)){
     this->networkid = networkid;
     this->on_receive = on_receive;
     this->on_download = on_download;
@@ -827,7 +878,11 @@ Server::Server(uint32_t networkid,
 }
 
 void Server::send_ack(){
-    dqn_send(this->rf95, this->ack_buf, this->num_data_slot / 8);
+    size_t size = this->num_data_slot / 8;
+    if(this->num_data_slot % 8)
+        size++;
+    print_ack(this->ack_buf, size);
+    dqn_send(this->rf95, this->ack_buf, size, this->rf95->DQN_SLOW_CRC);
 }
 
 void Server::send_feedback(){
@@ -859,7 +914,10 @@ void Server::reset_frame(){
     bloom_reset(&this->bloom);
     
     // reset the ACK
-    for(int i = 0; i < this->num_data_slot / 8; i++){
+    int size = this->num_data_slot / 8;
+    if(this->num_data_slot % 8)
+        size++;
+    for(int i = 0; i < size; i++){
         this->ack_buf[i] = 0;
     }
 }
@@ -884,10 +942,10 @@ void Server::receive_tr(){
         int index = i;
         uint32_t offset = DQN_TR_LENGTH + DQN_SHORT_GUARD - 
             (received_time - tr_start_time) % (DQN_TR_LENGTH + DQN_SHORT_GUARD);
-        if(offset > 7){
-            index--;
-            mprint("offset:%d\n", offset);
-        }
+        //if(offset > 7){
+        //    index--;
+        //    mprint("offset:%d\n", offset);
+        // }
 
         // compute the CRC
         struct dqn_tr *tr = (struct dqn_tr*)this->_msg_buf;
@@ -994,12 +1052,31 @@ void Server::recv_data(){
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             bool downstream = (meta >> 2) & 1;
             bool high_rate = (meta >> 3) & 1;
+            uint8_t num_of_slots = meta & 3;
             if(downstream) {
-                mprint("downstream not implemented\n");
-                i++;
+                uint16_t size = this->on_download(hw_addr, this->_msg_buf, num_of_slots * this->max_payload);
+                if(size == 0) { 
+                    // For now this is just empty without any data
+                    // May consider to change it in the future
+                    mprint("no data for nodeid: %d\n", nodeid);
+                } else {
+                    mprint("downstream data: %d\n", size);
+                    uint8_t *data = this->_msg_buf;
+                    if(size > this->max_payload && num_of_slots == 2){
+                         uint32_t start = millis();
+                         dqn_send(this->rf95, data, this->max_payload, 
+                                 high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
+                         while(millis() < start + this->data_length + DQN_SHORT_GUARD);
+                         dqn_send(this->rf95, data + this->max_payload, size % this->max_payload,
+                                 high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
+                    } else { // if the size is larger than it's allowed, it's the provider's fault
+                        dqn_send(this->rf95, data, size > this->max_payload? this->max_payload : size,
+                                high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
+                    }
+                }
+                i += num_of_slots;
                 continue;
             }
-            uint8_t num_of_slots = meta & 3;
             uint8_t total_len = 0;
             // used to continuously fill in the buffer
             uint8_t *data_buf = this->_msg_buf;
@@ -1022,7 +1099,7 @@ void Server::recv_data(){
                 
                 i++;
             }
-
+            printf("total len is %d\n", total_len);
             if(total_len && this->on_receive) {
                 this->on_receive(this->_msg_buf, total_len, hw_addr);
             }
@@ -1132,8 +1209,8 @@ void Server::run(){
         this->recv_data();
         // this is ACK time
         uint32_t ack_start = millis();
-        this->send_ack();
-        this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
+        //this->send_ack();
+        //this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
         while(millis() < ack_start + this->ack_length + DQN_GUARD);
         this->end_cycle();
     }

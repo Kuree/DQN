@@ -42,7 +42,7 @@
 #define DQN_MESSAGE_JOIN_REQ        0xa0
 #define DQN_MESSAGE_JOIN_RESP       0xa1
 #define DQN_MESSAGE_MASK            0x0f
-
+#define DQN_MESSAGE_DOWNSTREAM      0x04
 // define sync
 #define DQN_SYNC_INTERVAL           36000000    // 10 hours
 // define retry times
@@ -181,6 +181,12 @@ struct dqn_tr* dqn_make_tr(
         bool            high_rate,
         uint16_t        nodeid);
 
+struct dqn_tr* dqn_make_tr_down(
+        struct          dqn_tr* tr,
+        uint8_t         num_of_slots,
+        bool            high_rate,
+        uint16_t        nodeid);
+
 struct dqn_tr* dqn_make_tr_join(
         struct          dqn_tr *tr,
         bool            high_rate);
@@ -288,6 +294,8 @@ class Node: public RadioDevice{
         bool determine_rate();
         void enter_crq(uint32_t);
 
+        void (*on_receive)(uint8_t*, uint8_t);
+
 
         // message queue
         uint8_t _queue_buf[DQN_MESSAGE_QUEUE_SIZE * 30];
@@ -316,12 +324,13 @@ class Node: public RadioDevice{
         uint32_t receive_feedback(struct dqn_feedback *feedback);
         uint32_t send();
         uint32_t send(bool *ack);
-        uint32_t recv();
+        void recv();
         void sleep(uint32_t time);
         void join();
         void check_sync();
         bool add_data_to_send(uint8_t * data, uint8_t size);
         uint16_t mpl();
+        void set_on_receive(void (*on_receive)(uint8_t*, uint8_t));
 };
 
 class Server: public RadioDevice{
@@ -351,7 +360,7 @@ class Server: public RadioDevice{
 
         // function call backs
         void (*on_receive)(uint8_t *data, size_t size, uint8_t *hw_addr);
-        void (*on_download)(uint8_t *hw_addr, uint8_t *data, size_t *size);
+        uint16_t (*on_download)(uint8_t *hw_addr, uint8_t *data, uint8_t);
         
         void send_feedback();
         void receive_tr();
@@ -364,7 +373,7 @@ class Server: public RadioDevice{
     public:
         Server(uint32_t, 
                 void (*on_receive)(uint8_t*, size_t, uint8_t *), 
-                void (*on_download)(uint8_t*, uint8_t*, size_t*));
+                uint16_t (*on_download)(uint8_t*, uint8_t*, uint8_t));
         // this is a blocking method
         void run();
 

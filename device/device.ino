@@ -10,6 +10,15 @@ void setup() {
     node->join();
 }
 
+void print_packet(uint8_t *data, uint8_t size){
+    for(int i = 0; i < size; i++){
+        mprint("%X ", data[i]);
+        if(i % 16 == 15)
+            mprint("\n");
+    }
+    mprint("\n");
+}
+
 void loop() {
     delay(random(2000) + 1000); // prevent it from sending too fast
     uint16_t data_size = random(node->mpl() * 2);
@@ -20,7 +29,8 @@ void loop() {
     }
     node->add_data_to_send(data, data_size);
     bool ack;
-    node->send(&ack);
-    mprint("data has sent with ACK: %s\n", ack?"true":"false");
+    node->send();//&ack);
+    node->set_on_receive(&print_packet);
+    node->recv();
 }
 

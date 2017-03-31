@@ -39,7 +39,7 @@ void print_message(uint8_t* data, size_t size, uint8_t* hw_addr){
 uint16_t on_download(uint8_t* hw_addr, uint8_t* buf, uint8_t max_payload){
     mprint("%X:%X:%X:%X:%X:%X requested a packet\n",
             hw_addr[0], hw_addr[1], hw_addr[2], hw_addr[3], hw_addr[4], hw_addr[5]);
-    uint16_t size = 20;
+    uint16_t size = 40;
     for(int i = 0; i < size; i++){
         buf[i] = i % 256;
     }

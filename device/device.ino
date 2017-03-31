@@ -27,9 +27,9 @@ void loop() {
     for(int i = 0; i < data_size; i++){
       data[i] = i;
     }
-    node->add_data_to_send(data, data_size);
+    //node->add_data_to_send(data, data_size);
     bool ack;
-    node->send();//&ack);
+    //node->send();//&ack);
     node->set_on_receive(&print_packet);
     node->recv();
 }

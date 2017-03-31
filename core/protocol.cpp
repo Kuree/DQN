@@ -118,7 +118,7 @@ struct dqn_tr* dqn_make_tr_down(
         bool high_rate,
         uint16_t nodeid){
     tr->version = DQN_VERSION;
-    tr->messageid = DQN_MESSAGE_TR | (DQN_MESSAGE_MASK & num_of_slots) | (high_rate << 2);
+    tr->messageid = DQN_MESSAGE_TR | (DQN_MESSAGE_MASK & num_of_slots) | DQN_MESSAGE_DOWNSTREAM | (high_rate << 2);
     tr->nodeid = nodeid;
     tr->crc = 0;
     uint8_t crc = get_crc8((char*)tr, sizeof(struct dqn_tr));
@@ -716,10 +716,13 @@ void Node::receive_data(int index){
     if(index == 0){
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, 
                 this->rf95->DQN_SLOW_CRC, NULL);
+        mprint("received len: %d\n", len);
     } else {
         // assume the first slot is always full
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf + this->max_payload, 
                 this->data_length + DQN_SHORT_GUARD, this->rf95->DQN_SLOW_CRC, NULL);
+        mprint("received len: %d\n", len);
+        len += this->max_payload;
         if(this->on_receive)
             this->on_receive(this->_msg_buf, len);
     }
@@ -1050,7 +1053,7 @@ void Server::recv_data(){
             uint16_t nodeid = request->nodeid;
             uint8_t *hw_addr = this->node_table[nodeid];
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
-            bool downstream = (meta >> 2) & 1;
+            bool downstream = meta & DQN_MESSAGE_DOWNSTREAM;
             bool high_rate = (meta >> 3) & 1;
             uint8_t num_of_slots = meta & 3;
             if(downstream) {
@@ -1064,9 +1067,12 @@ void Server::recv_data(){
                     uint8_t *data = this->_msg_buf;
                     if(size > this->max_payload && num_of_slots == 2){
                          uint32_t start = millis();
+                         mprint("sending data slot 0\n");
                          dqn_send(this->rf95, data, this->max_payload, 
                                  high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
-                         while(millis() < start + this->data_length + DQN_SHORT_GUARD);
+                         while(millis() < start + this->data_length + DQN_SHORT_GUARD){
+                         }
+                         mprint("sending data slot 1\n");
                          dqn_send(this->rf95, data + this->max_payload, size % this->max_payload,
                                  high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
                     } else { // if the size is larger than it's allowed, it's the provider's fault

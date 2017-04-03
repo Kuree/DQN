@@ -42,11 +42,17 @@ protocol.o: ../core/protocol.cpp
 bloom.o: ../core/bloom.c
 	$(CC) $(CFLAGS)  -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
+blink.o: blink.cpp
+	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
+
 DQNserver.o: DQNserver.cpp
 	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
 
 DQNserver: DQNserver.o protocol.o bloom.o RH_RF95.o RasPiWiring.o RHHardwareSPI.o RHSPIDriver.o RHGenericDriver.o RHGenericSPI.o
 	$(CC) $(addprefix $(BUILDDIR)/,$^) $(LIBS) -o DQNserver
+
+blink: blink.o RasPiWiring.o
+	$(CC) $(addprefix $(BUILDDIR)/,$^) $(LIBS) -o blink
 
 clean:
 	rm -rf $(BUILDDIR) *.o DQNserver

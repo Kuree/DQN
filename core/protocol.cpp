@@ -450,12 +450,6 @@ uint16_t RadioDevice::get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
     return (uint16_t)ceil(t_on_air);
 }
 
-uint8_t RadioDevice::get_power(uint32_t number){
-    // use GCC builtin function
-    return 31 - __builtin_clz(number);
-}
-
-
 void RadioDevice::print_frame_info(){
     mprint("---------- DQN information ----------\n");
     mprint("frame length: %d\n", this->frame_length);
@@ -469,7 +463,6 @@ void Node::ctor(uint8_t *hw_addr){
     this->setup();
     this->nodeid = 0;
     this->has_sync = false;
-    this->fast_rate = false;
     this->has_joined = false;
 
     memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
@@ -507,8 +500,8 @@ void Node::sync(){
             // ------ DEBUGING PURPOSE------
             // compute the actual frame start time
             uint32_t base_station_time = (timestamp - (DQN_GUARD + DQN_TR_LENGTH * this->num_tr));
-            this->base_station_offset = this->time_offset - base_station_time;
-            mprint("frame offset = %d base staiton time %d\n", this->base_station_offset, base_station_time);
+            uint32_t base_station_offset = this->time_offset - base_station_time;
+            mprint("frame offset = %d base staiton time %d\n", base_station_offset, base_station_time);
             // -------- END ----------------
             this->last_sync_time = millis();
             this->has_sync = true;
@@ -551,7 +544,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // send a TR request
         // sleep at the last to ensure the timing 
         this->sleep(frame_start + chosen_mini_slot * (DQN_TR_LENGTH + DQN_SHORT_GUARD) - millis());
-        mprint("send request at base station time %d\n", millis() - this->base_station_offset);
+        
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
         dqn_send(this->rf95, tr, sizeof(struct dqn_tr)); //, this->rf95->DQN_SLOW_NOCRC);
 
@@ -836,11 +829,6 @@ bool Node::add_data_to_send(uint8_t *data, uint8_t size){
     this->message_queue.push(message);
     return true;
     
-}
-void Node::enter_crq(uint32_t sleep_time){
-    this->sleep(sleep_time);
-    // calibrate to the TR slot
-    this->check_sync();    
 }
 
 bool Node::determine_rate(){

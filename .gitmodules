@@ -1,6 +1,3 @@
 [submodule "server/RadioHead"]
 	path = server/RadioHead
 	url = git@github.com:HydroSense/RadioHead.git
-[submodule "RadioHead"]
-	path = RadioHead
-	url = ./RadioHead

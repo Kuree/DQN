@@ -254,8 +254,11 @@ void print_ack(uint8_t *ack, size_t size){
 
 void print_feedback(struct dqn_feedback* feedback){
     mprint("------------FEEDBACK-----------\n");
-    mprint("frame param: \t%X CRQ: %d DTQ: %d\n", feedback->frame_param, feedback->crq_length,
+    mprint("frame param: \t0x%X CRQ: %d DTQ: %d\n",
+            feedback->frame_param,
+            feedback->crq_length,
             feedback->dtq_length);
+    mprint("timestamp:   %d\t", feedback->timestamp);
     mprint("TR result:   \t");
     for(int i = 0; i < get_tr(feedback->frame_param) / 4; i++) {
         print_byte(feedback->data[i]);

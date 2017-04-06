@@ -1,58 +1,40 @@
-# Makefile
-# Sample for RH_RF95 on Raspberry Pi with Lora/GPS hat
-# http://www.dragino.com/products/module/item/106-lora-gps-hat.html
-# Based on the sample for RH_NRF24 on Raspberry Pi
-# Caution: requires bcm2835 library to be already installed
-# http://www.airspayce.com/mikem/bcm2835/
+# ref http://hiltmon.com/blog/2013/07/03/a-simple-c-plus-plus-project-structure/
+# ref http://stackoverflow.com/questions/1139271/makefiles-with-source-files-in-different-directories
 
-CC            = g++
-CFLAGS        = -DRASPBERRY_PI -DBCM2835_NO_DELAY_COMPATIBILITY -g -lm
-#LIBS          = -lbcm2835
-LIBS          = -lwiringPi
-RADIOHEADBASE = ./RadioHead
-INCLUDE       = -I$(RADIOHEADBASE)
-BUILDDIR			= build
+# This is the main compiler
+CC := g++
+# CC := clang --analyze # and comment out the linker last line for sanity
 
-all: builddir DQNserver
+SRCDIR := src
+BUILDDIR := build
+DQNSERVER := bin/DQNserver
+SRCEXT := cpp
+SOURCES := $(shell find $(SRCDIR) -type f -name *.$(SRCEXT))
+OBJECTS := $(patsubst $(SRCDIR)/%,$(BUILDDIR)/%,$(SOURCES:.$(SRCEXT)=.o))
 
-builddir:
-	mkdir -p $(BUILDDIR)
+#removed -DBCM2835_NO_DELAY_COMPATIBILITY, not needed?
+# we actually want this becuase it allows wiringPi and BCM2835 to coexist
 
-RasPiWiring.o: $(RADIOHEADBASE)/RHutil/RasPiWiring.cpp
-	$(CC) $(CFLAGS) -c $^ $(INCLUDE) -o $(BUILDDIR)/$@
+LIB := -lwiringPi -ldqn -lradiohead -lm
+RADIOHEADBASE := ../RadioHead
+DQNBASE := ../core
+INC := -I$(RADIOHEADBASE) -I$(DQNBASE)
+CFLAGS := -DRASPBERRY_PI -g -Wall
 
-RH_RF95.o: $(RADIOHEADBASE)/RH_RF95.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
+$(DQNSERVER): $(BUILDDIR)/DQNserver.o
+	@echo "Linking..."
+	$(CC) $(BUILDDIR)/DQNserver.o -o $(DQNSERVER) -L$(RADIOHEADBASE)/bin -L$(DQNBASE)/bin -Wl,-rpath=$(RADIOHEADBASE)/bin,-rpath=$(DQNBASE)/bin $(LIB)
 
-RHHardwareSPI.o: $(RADIOHEADBASE)/RHHardwareSPI.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHSPIDriver.o: $(RADIOHEADBASE)/RHSPIDriver.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHGenericDriver.o: $(RADIOHEADBASE)/RHGenericDriver.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-RHGenericSPI.o: $(RADIOHEADBASE)/RHGenericSPI.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-protocol.o: ../core/protocol.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-bloom.o: ../core/bloom.c
-	$(CC) $(CFLAGS)  -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-blink.o: blink.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-DQNserver.o: DQNserver.cpp
-	$(CC) $(CFLAGS) -c $(INCLUDE) $^ -o $(BUILDDIR)/$@
-
-DQNserver: DQNserver.o protocol.o bloom.o RH_RF95.o RasPiWiring.o RHHardwareSPI.o RHSPIDriver.o RHGenericDriver.o RHGenericSPI.o
-	$(CC) $(addprefix $(BUILDDIR)/,$^) $(LIBS) -o DQNserver
-
-blink: blink.o RasPiWiring.o
-	$(CC) $(addprefix $(BUILDDIR)/,$^) $(LIBS) -o blink
+$(BUILDDIR)/%.o: $(SRCDIR)/%.$(SRCEXT)
+	@mkdir -p $(BUILDDIR)
+	$(CC) $(CFLAGS) $(INC) -c -o $@ $<
 
 clean:
-	rm -rf $(BUILDDIR) *.o DQNserver
+	@echo " Cleaning...";
+	$(RM) -r $(BUILDDIR) $(DQNSERVER)
+
+# blink
+blink:
+	$(CC) $(CFLAGS) test/tester.cpp $(INC) $(LIB) -o bin/tester
+
+.PHONY: clean $(RADIOHEADBASE)

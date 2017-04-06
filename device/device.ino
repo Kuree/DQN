@@ -4,8 +4,17 @@
 char __node_buf[sizeof(Node)];
 Node* node;
 
+struct RH_RF95::pin_config pc_feather = {
+    .cs = 8,
+    .interrupt = 3,
+    .fhss_interrupt = -1,
+    .reset = 4,
+    .tx_led = 13,
+    .rx_led = 13
+  };
+
 void setup() {
-    node = new (__node_buf)Node();
+    node = new (__node_buf)Node(pc_feather);
     mprint("joining the network\n");
     node->join();
 }

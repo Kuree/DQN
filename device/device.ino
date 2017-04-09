@@ -11,7 +11,7 @@ struct RH_RF95::pin_config pc_feather = {
     .reset = 4,
     .tx_led = 13,
     .rx_led = 13
-  };
+};
 
 void setup() {
     node = new (__node_buf)Node(pc_feather);

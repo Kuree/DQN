@@ -244,7 +244,7 @@ uint16_t get_tr(uint16_t frame_param){
 
 void print_ack(uint8_t *ack, size_t size){
     mprint("------------ACK---------------\n");
-    for(int i = 0; i < size; i++){
+    for(uint32_t i = 0; i < size; i++){
         print_byte(ack[i]);
         if(i % 4 == 3)
             mprint("\n");
@@ -298,8 +298,8 @@ RH_RF95* setup_radio(RH_RF95 *rf95){
 #ifdef ARDUINO
     Serial.begin(57600);
     while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
-#else
-    wiringPiSetup();
+//#else
+//    wiringPiSetup();
 #endif
     if (!rf95->init()){
         mprint("rf95 init failed.\n");
@@ -422,8 +422,6 @@ uint32_t RadioDevice::get_frame_length(){
     // TODO:
     // refactor this and make it more efficient
     if(!this->feedback_length){
-        struct dqn_feedback feedback;
-        uint8_t slots[255];
         this->feedback_length = this->get_feedback_length();
     }
     uint32_t total_time = tr_time + DQN_GUARD + this->feedback_length + DQN_GUARD +
@@ -604,9 +602,9 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                     // no need to sleep to next TR frame
                     // check_sync() will handle that
                 } else {
-                    uint32_t test_start_time = millis();
+                    //uint32_t test_start_time = millis();
                     uint8_t *bf = feedback->data + this->num_tr / 4;
-                    size_t bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here
+                    int bloom_size = len - 16 - this->num_tr / 4; // TODO: fix magic number 16 here
                     struct bloom bloom;
                     uint16_t dtq_copy = dtq;
                     bloom_load(&bloom, bf, this->num_tr, DQN_BF_ERROR);
@@ -917,7 +915,7 @@ void Server::reset_frame(){
 void Server::receive_tr(){
     // transmission will be in no header mode
     rf95->setPayloadLength(sizeof(struct dqn_tr));
-    uint32_t tr_start_time = millis();
+    //uint32_t tr_start_time = millis();
     for(int i = 0; i < this->num_tr; i++){
         // loop throw each TR slots
         uint32_t received_time;
@@ -932,8 +930,8 @@ void Server::receive_tr(){
         // correct index if it was sent a little bit early
         // TODO: this may cause the next one being missed
         int index = i;
-        uint32_t offset = DQN_TR_LENGTH + DQN_SHORT_GUARD -
-            (received_time - tr_start_time) % (DQN_TR_LENGTH + DQN_SHORT_GUARD);
+        //uint32_t offset = DQN_TR_LENGTH + DQN_SHORT_GUARD -
+        //    (received_time - tr_start_time) % (DQN_TR_LENGTH + DQN_SHORT_GUARD);
         //if(offset > 7){
         //    index--;
         //    mprint("offset:%d\n", offset);
@@ -969,7 +967,7 @@ void Server::receive_tr(){
             }
 
 
-            if(messageid & DQN_MESSAGE_TR != DQN_MESSAGE_TR){
+            if((messageid & DQN_MESSAGE_TR) != DQN_MESSAGE_TR){
                 mprint("Invalid message id %d\n", messageid);
                 continue;
             }

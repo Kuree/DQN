@@ -3,7 +3,7 @@
 
 all: RadioHead core server
 	@echo "All done!"
-	@ln -s server/bin/DQNserver
+	@ln -sf server/bin/DQNserver
 
 RadioHead:
 	$(MAKE) -C RadioHead

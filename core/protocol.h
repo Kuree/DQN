@@ -203,7 +203,7 @@ struct dqn_join_resp* dqn_make_join_resp(
         uint8_t  *hw_addr,
         uint16_t nodeid);
 
-
+// these are wrapper functions to send data through RadioHead library
 void dqn_send(
         RH_RF95 *rf95,
         const void* data,
@@ -215,6 +215,9 @@ void dqn_send(
         size_t size,
         RH_RF95::ModemConfigChoice choice);
 
+// these are wrapper functions for receive functions
+// if 0 is passed to wait_time, it will block the execution till a
+// packet is received.
 uint8_t dqn_recv(
         RH_RF95 *rf95,
         uint8_t* buf,
@@ -249,53 +252,72 @@ void print_feedback(struct dqn_feedback* feedback);
 // a base class wrapper for all DQN methods
 class RadioDevice{
     private:
-        uint8_t get_power(uint32_t number);
         uint8_t _rf95_buf[sizeof(RH_RF95)];
 
     protected:
+        // the following four attributes specifies how long (ms) wach sub-frame is
         // how long each data slot is
         uint16_t data_length;
         uint16_t feedback_length;
         uint16_t ack_length;
         uint32_t frame_length;
 
+        // hardware address
         uint8_t hw_addr[HW_ADDR_LENGTH];
-        uint8_t recv_buf[255];
+        
+        // reconfigurable network information
         uint16_t num_tr;
         uint16_t num_data_slot;
         double bf_error;
         uint16_t max_payload;
+        
+        // used to receive and send message
         uint8_t _msg_buf[255];
 
+        RH_RF95 *rf95;
+        
+        // it will set all the network information based on the feedback
         void parse_frame_param(
                 struct dqn_feedback *feedback);
+        // returns feedabck length
         uint32_t get_feedback_length();
+
+        // helper function to tell whether the device is busy
         bool is_receiving();
 
     public:
         RH_RF95 *rf95;
+        // set up the radio
         void setup(struct RH_RF95::pin_config pc);
         void set_hw_addr(const uint8_t *hw_addr);
         uint16_t get_frame_param();
+        // get lora air time
+        // TODO: consider to remove this since RadioHead already has this one
         uint16_t get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
                 uint32_t packet_len, bool crc, bool fixed_len, uint32_t cr, bool low_dr);
+        // return the length (ms) of the entire frame
+        // only usefull once the device knows the network configuration
         uint32_t get_frame_length();
+        // just print
         void print_frame_info();
 };
 
 class Node: public RadioDevice{
     private:
+        // timing control varialbes
         uint32_t time_offset;
         uint16_t nodeid;
         bool has_sync;
         uint32_t last_sync_time;
-        uint32_t base_station_offset; // debugging purpose
-        bool fast_rate;
         bool has_joined;
+        
+        // if the device doesn't receive feedback for certain times
+        // it will try to re-sync. retry_count keeps track of the failures
         uint16_t retry_count;
-
+        
+        // return which rate to use
+        // current always false (slow)
         bool determine_rate();
-        void enter_crq(uint32_t);
 
         void (*on_receive)(uint8_t*, uint8_t);
 
@@ -316,23 +338,30 @@ class Node: public RadioDevice{
         uint16_t send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                 void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command);
 
+        // these functions are called in the DTQ
+        // the index tells you which data slot is being used
         void send_data(int index);
-        void join_data(int index);
+        void join_data(int index); // for join process only
         void receive_data(int index);
     public:
         // this will generate a fixed hardware addresss
         Node(struct RH_RF95::pin_config pc);
         Node(struct RH_RF95::pin_config pc, uint8_t *hw_addr);
         void sync();
-        uint32_t receive_feedback(struct dqn_feedback *feedback);
+        // send returns how many bytes been sent
         uint32_t send();
+        // this is send with ACK
         uint32_t send(bool *ack);
+        // calls when the nodes wish to receive some data
         void recv();
         void sleep(uint32_t time);
         void join();
         void check_sync();
+        // has to be called if the data wish to send any data
         bool add_data_to_send(uint8_t * data, uint8_t size);
+        // helper function to tell device the maximum payload size
         uint16_t mpl();
+        // set on_receive function callback
         void set_on_receive(void (*on_receive)(uint8_t*, uint8_t));
 };
 
@@ -343,12 +372,18 @@ class Server: public RadioDevice{
         uint32_t dtq;
         struct bloom bloom;
         uint8_t tr_status[DQN_SERVER_MAX_TR];
+        // this holds the bloom filter
         uint8_t _bloom_buf[DQN_SERVER_MAX_BLOOM];
+
+        // the following is used for static allocation
+        // this holds all the TR requests in the queue
         uint8_t _tr_data_buf[sizeof(struct dqn_data_request) * DQN_SERVER_MAX_TR];
+        // this holds all the hardware address registed in the server
         uint8_t _hw_addr_buf[HW_ADDR_LENGTH * DQN_NODE_CAPACITY];
         uint8_t ack_buf[DQN_SERVER_MAX_DATA_SLOT / 8];
 
 #ifdef ARDUINO
+        // use ETL for arduino
         queue<struct dqn_data_request *, DQN_DEVICE_QUEUE_SIZE> dtqueue;
         etl::map<uint16_t, uint8_t *, DQN_NODE_CAPACITY> node_table;
         etl::map<uint8_t *, uint16_t, DQN_NODE_CAPACITY> node_table_invert;

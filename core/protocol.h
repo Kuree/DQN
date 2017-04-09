@@ -274,8 +274,6 @@ class RadioDevice{
         // used to receive and send message
         uint8_t _msg_buf[255];
 
-        RH_RF95 *rf95;
-        
         // it will set all the network information based on the feedback
         void parse_frame_param(
                 struct dqn_feedback *feedback);

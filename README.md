@@ -16,3 +16,7 @@ You shall replace ```$ARDUINO_PATH``` with your installment path.
 
 ## Examples
 This repo contains two examples, one for the server and one for the deivce. To see how to use the server, see the ```server``` folder and the ```device``` folder for device examples. The server implementation is Arduino compatible and you can load the symbolic link file to bypass the Arduino directory restriction.
+
+### Build process
+This project uses a hierarchy of Makefiles. The user should use the top-level
+makefile in the root directory. The default target will make all executables.

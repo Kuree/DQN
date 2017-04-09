@@ -14,7 +14,7 @@
 // define DQN timing
 #define DQN_GUARD 15
 #define DQN_SHORT_GUARD 5
-#define DQN_TR_LENGTH 150 
+#define DQN_TR_LENGTH 150
 #define DQN_PREAMBLE 6
 
 // define DQN encodings
@@ -47,17 +47,18 @@
 #define DQN_SYNC_INTERVAL           36000000    // 10 hours
 // define retry times
 // value for testing only.
-#define DQN_SYNC_RETRY              2 // if it fails twice receiving feedback, we need to re-sync. 
+#define DQN_SYNC_RETRY              2 // if it fails twice receiving feedback, we need to re-sync.
 // define hardware information
 #define HW_ADDR_LENGTH      6
 
 // radio configuration
 // arduino
 #ifdef ARDUINO
-#define RFM95_CS 8
-#define RFM95_RST 4
-#define RFM95_INT 3
-#define VBATPIN A7 
+// remove pin numbers from protocol
+// #define RFM95_CS 8
+// #define RFM95_RST 4
+// #define RFM95_INT 3
+// #define VBATPIN A7
 
 #include <SPI.h>
 #include <RH_RF95.h>
@@ -71,12 +72,13 @@ using namespace etl;
 
 #else
 // raspberry pi
-#define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
-#define RF95_INT_PIN 7    // this is BCM pin 4, physical pin 7.
-#define RF95_CS_PIN 10    // this is BCM pin 8, physical pin 24
-// wiringPi pin numbers
-#define TX_PIN 4
-#define RX_PIN 5
+// remove pin numbers from protocol
+// #define RF95_RESET_PIN 0  // this is BCM pin 17, physical pin 11.
+// #define RF95_INT_PIN 7    // this is BCM pin 4, physical pin 7.
+// #define RF95_CS_PIN 10    // this is BCM pin 8, physical pin 24
+// // wiringPi pin numbers
+// #define TX_PIN 4
+// #define RX_PIN 5
 
 #include <wiringPi.h>
 #include <RH_RF95.h>
@@ -98,12 +100,13 @@ using namespace std;
 #define DQN_FRAME_LOW_DR false
 
 // limitation of arduino-based server
-#define DQN_DEVICE_QUEUE_SIZE 255 
+#define DQN_DEVICE_QUEUE_SIZE 255
 #define DQN_SERVER_MAX_TR 256
 #define DQN_SERVER_MAX_BLOOM 256
 #define DQN_SERVER_MAX_DATA_SLOT 256
 #define DQN_NODE_CAPACITY 256 // may increase this size later
 #define DQN_MESSAGE_QUEUE_SIZE 10
+
 
 struct dqn_tr{
     uint8_t         version;
@@ -122,7 +125,7 @@ struct  dqn_feedback{
     uint16_t        crq_length;     // 2
     uint16_t        dtq_length;     // 2
     uint16_t        frame_param;    // 2
-    uint8_t         data[255 - 16]; // this is a placeholder. actual size needs to be computed 
+    uint8_t         data[255 - 16]; // this is a placeholder. actual size needs to be computed
 } __attribute__((packed));  // total is 24 bytes for DQN_M = 32
 
 struct dqn_ack{
@@ -202,8 +205,8 @@ struct dqn_join_resp* dqn_make_join_resp(
 
 // these are wrapper functions to send data through RadioHead library
 void dqn_send(
-        RH_RF95 *rf95, 
-        const void* data, 
+        RH_RF95 *rf95,
+        const void* data,
         size_t size);
 
 void dqn_send(
@@ -216,19 +219,19 @@ void dqn_send(
 // if 0 is passed to wait_time, it will block the execution till a
 // packet is received.
 uint8_t dqn_recv(
-        RH_RF95 *rf95, 
-        uint8_t* buf, 
-        uint32_t wait_time, 
+        RH_RF95 *rf95,
+        uint8_t* buf,
+        uint32_t wait_time,
         RH_RF95::ModemConfigChoice choice,
         uint32_t *received_time);
 
-uint8_t dqn_recv(                        
-         RH_RF95 *rf95,                   
-         uint8_t* buf,                    
-         uint32_t wait_time,              
+uint8_t dqn_recv(
+         RH_RF95 *rf95,
+         uint8_t* buf,
+         uint32_t wait_time,
          uint32_t *received_time);
 
-uint8_t dqn_recv(  
+uint8_t dqn_recv(
         RH_RF95 *rf95,
         uint8_t* buf,
         uint32_t wait_time);
@@ -283,13 +286,14 @@ class RadioDevice{
         bool is_receiving();
 
     public:
+        RH_RF95 *rf95;
         // set up the radio
-        void setup();
+        void setup(struct RH_RF95::pin_config pc);
         void set_hw_addr(const uint8_t *hw_addr);
         uint16_t get_frame_param();
         // get lora air time
         // TODO: consider to remove this since RadioHead already has this one
-        uint16_t get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre, 
+        uint16_t get_lora_air_time(uint32_t bw, uint32_t sf, uint32_t pre,
                 uint32_t packet_len, bool crc, bool fixed_len, uint32_t cr, bool low_dr);
         // return the length (ms) of the entire frame
         // only usefull once the device knows the network configuration
@@ -327,11 +331,11 @@ class Node: public RadioDevice{
 #endif
 
         // old C++ doesn't have delegating constructors
-        // I miss C#
-        void ctor(uint8_t *hw_addr);
+        // I miss C# (c++11 has it)
+        void ctor(struct RH_RF95::pin_config pc, uint8_t *hw_addr);
 
         // this is for all the communication requests to the base station
-        uint16_t send_request(struct dqn_tr *tr, uint8_t num_of_slots, 
+        uint16_t send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                 void (*on_feedback_received)(struct dqn_feedback *), uint8_t send_command);
 
         // these functions are called in the DTQ
@@ -341,8 +345,8 @@ class Node: public RadioDevice{
         void receive_data(int index);
     public:
         // this will generate a fixed hardware addresss
-        Node();
-        Node(uint8_t *hw_addr);
+        Node(struct RH_RF95::pin_config pc);
+        Node(struct RH_RF95::pin_config pc, uint8_t *hw_addr);
         void sync();
         // send returns how many bytes been sent
         uint32_t send();
@@ -395,7 +399,7 @@ class Server: public RadioDevice{
         // function call backs
         void (*on_receive)(uint8_t *data, size_t size, uint8_t *hw_addr);
         uint16_t (*on_download)(uint8_t *hw_addr, uint8_t *data, uint8_t);
-        
+
         void send_feedback();
         void receive_tr();
         void send_ack();
@@ -405,8 +409,9 @@ class Server: public RadioDevice{
         void end_cycle();
         void recv_node();
     public:
-        Server(uint32_t, 
-                void (*on_receive)(uint8_t*, size_t, uint8_t *), 
+        Server(uint32_t,
+                struct RH_RF95::pin_config pc,
+                void (*on_receive)(uint8_t*, size_t, uint8_t *),
                 uint16_t (*on_download)(uint8_t*, uint8_t*, uint8_t));
         // this is a blocking method
         void run();

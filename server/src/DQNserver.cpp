@@ -50,7 +50,7 @@ uint16_t on_download(uint8_t* hw_addr, uint8_t* buf, uint8_t max_payload){
 void sig_handler(int sig)
 {
     if (flag == 1){
-        printf("\n--- Double CTRL-L - panic stop---\n");
+        printf("\n--- Double CTRL-C - panic stop---\n");
         exit(-99);
     }
     flag=1;
@@ -59,19 +59,52 @@ void sig_handler(int sig)
 #ifndef ARDUINO
 int main (int argc, const char* argv[] ){
     signal(SIGINT, &sig_handler);
+
+    // wiringPi has to be setup!
+    wiringPiSetup();
+
     // see answer: http://arduino.stackexchange.com/a/1499
-    server = new (__server_buf)Server(0, &print_message, &on_download);
+
+    // my rev2 lora hat uses different pins CS=10, INT=21
+    //    rev1 lora hat uses                CS=10, INT=7
+    // I could subclass the server for each HW rev or
+    // deal with passing in HW params.
+    
+    // struct RH_RF95::pin_config pc_lorahat_rev1 = {
+    //     .cs = 10,
+    //     .interrupt = 7,
+    //     .fhss_interrupt = -1,
+    //     .reset = 0,
+    //     .tx_led = 4,
+    //     .rx_led = 5
+    //   };
+    struct RH_RF95::pin_config pc_lorahat_rev2 = {
+        .cs = 10,
+        .interrupt = 21,
+        .fhss_interrupt = -1,
+        .reset = 26,
+        .tx_led = 4,
+        .rx_led = 5
+      };
+    server = new (__server_buf)Server(0, pc_lorahat_rev2,
+        &print_message, &on_download);
 #else
 void setup(){
-    server = new (__server_buf)Server(0, &print_message, &on_download);
+  struct RH_RF95::pin_config pc_feather = {
+      .cs = 8,
+      .interrupt = 3,
+      .fhss_interrupt = -1,
+      .reset = 4,
+      .tx_led = 13,
+      .rx_led = 13
+    };
+    server = new (__server_buf)Server(0, pc_feather,
+      &print_message, &on_download);
 }
 
 void loop(){
 #endif
-    server->print_frame_info(); 
+    server->print_frame_info();
     server->run();
 
 }
-
-
-

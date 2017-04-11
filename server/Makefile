@@ -19,9 +19,9 @@ LIB := -lwiringPi -ldqn -lradiohead -lm
 RADIOHEADBASE := ../RadioHead
 DQNBASE := ../core
 INC := -I$(RADIOHEADBASE) -I$(DQNBASE)
-CFLAGS := -DRASPBERRY_PI -g -Wall
+override CFLAGS += -DRASPBERRY_PI -g -Wall
 
-$(DQNSERVER): $(BUILDDIR)/DQNserver.o
+$(DQNSERVER): $(BUILDDIR)/DQNserver.o ../core/bin/libdqn.a $(RADIOHEADBASE)/bin/libradiohead.a
 	@echo "Linking..."
 	$(CC) $(BUILDDIR)/DQNserver.o -o $(DQNSERVER) -L$(RADIOHEADBASE)/bin -L$(DQNBASE)/bin -Wl,-rpath=$(RADIOHEADBASE)/bin,-rpath=$(DQNBASE)/bin $(LIB)
 

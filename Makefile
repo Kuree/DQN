@@ -12,7 +12,7 @@ core: RadioHead
 	$(MAKE) -C core
 
 server: RadioHead core
-	$(MAKE) -C server
+	$(MAKE) -C server 
 
 clean:
 	$(MAKE) -C RadioHead clean

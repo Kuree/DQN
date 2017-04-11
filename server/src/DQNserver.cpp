@@ -69,16 +69,18 @@ int main (int argc, const char* argv[] ){
     //    rev1 lora hat uses                CS=10, INT=7
     // I could subclass the server for each HW rev or
     // deal with passing in HW params.
-    
-    // struct RH_RF95::pin_config pc_lorahat_rev1 = {
-    //     .cs = 10,
-    //     .interrupt = 7,
-    //     .fhss_interrupt = -1,
-    //     .reset = 0,
-    //     .tx_led = 4,
-    //     .rx_led = 5
-    //   };
-    struct RH_RF95::pin_config pc_lorahat_rev2 = {
+
+#if defined LORAHATV1
+    struct RH_RF95::pin_config pc_lorahat = {
+         .cs = 10,
+         .interrupt = 7,
+         .fhss_interrupt = -1,
+         .reset = 0,
+         .tx_led = 4,
+         .rx_led = 5
+       };
+#elif defined LORAHATV2
+    struct RH_RF95::pin_config pc_lorahat = {
         .cs = 10,
         .interrupt = 21,
         .fhss_interrupt = -1,
@@ -86,7 +88,10 @@ int main (int argc, const char* argv[] ){
         .tx_led = 4,
         .rx_led = 5
       };
-    server = new (__server_buf)Server(0, pc_lorahat_rev2,
+#else
+  #error *** Define LORAHATV1 or LORAHATV2 eg $make CFLAGS=-DLORAHATV2****
+#endif
+    server = new (__server_buf)Server(0, pc_lorahat,
         &print_message, &on_download);
 #else
 void setup(){

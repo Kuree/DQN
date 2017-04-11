@@ -10,11 +10,11 @@ TARGET := bin/libdqn.a
 SOURCES := bloom.c protocol.cpp
 OBJECTS := $(BUILDDIR)/bloom.o $(BUILDDIR)/protocol.o
 
-CFLAGS := -DRASPBERRY_PI -g -lm -Wall
+override CFLAGS += -DRASPBERRY_PI -g -lm -Wall
 LIB := -lwiringPi
 INC := -I. -I./RHutil -I../RadioHead
 
-$(TARGET): $(OBJECTS)
+$(TARGET): $(OBJECTS) ../RadioHead/bin/libradiohead.a
 	@mkdir -p bin
 	@echo " Linking..."
 	@echo " $(AR) rcs $(TARGET) $(OBJECTS)"; $(AR) rcs $(TARGET) $(OBJECTS);
@@ -25,7 +25,7 @@ $(BUILDDIR)/%.o: %.c
 	@echo " gcc $(CFLAGS) $(INC) -c -o $@ $<"; gcc $(CFLAGS) $(INC) -c -o $@ $<
 
 $(BUILDDIR)/%.o: %.cpp
-	@mkdir -p $(BUILDDIR)	
+	@mkdir -p $(BUILDDIR)
 	@mkdir -p $(@D)
 	@echo " g++ $(CFLAGS) $(INC) -c -o $@ $<"; g++ $(CFLAGS) $(INC) -c -o $@ $<
 

@@ -19,10 +19,10 @@
 
 // define DQN encodings
 // TODO: fix all the rates
-#define DQN_RATE_FEEDBACK Bw500Cr48Sf4096
-#define DQN_SLOW_CRC Bw500Cr48Sf4096
-#define DQN_FAST_CRC Bw500Cr45Sf4096
-#define DQN_SLOW_NOCRC Bw500Cr48Sf4096NoHeadNoCrc
+#define DQN_RATE_FEEDBACK RH_RF95::Bw500Cr48Sf4096
+#define DQN_SLOW_CRC RH_RF95::Bw500Cr48Sf4096
+#define DQN_FAST_CRC RH_RF95::Bw500Cr45Sf4096
+#define DQN_SLOW_NOCRC RH_RF95::Bw500Cr48Sf4096NoHeadNoCrc
 
 // device only
 #define DQN_IDLE 0
@@ -264,13 +264,13 @@ class RadioDevice{
 
         // hardware address
         uint8_t hw_addr[HW_ADDR_LENGTH];
-        
+
         // reconfigurable network information
         uint16_t num_tr;
         uint16_t num_data_slot;
         double bf_error;
         uint16_t max_payload;
-        
+
         // used to receive and send message
         uint8_t _msg_buf[255];
 
@@ -308,11 +308,11 @@ class Node: public RadioDevice{
         bool has_sync;
         uint32_t last_sync_time;
         bool has_joined;
-        
+
         // if the device doesn't receive feedback for certain times
         // it will try to re-sync. retry_count keeps track of the failures
         uint16_t retry_count;
-        
+
         // return which rate to use
         // current always false (slow)
         bool determine_rate();
@@ -352,7 +352,7 @@ class Node: public RadioDevice{
         uint32_t send(bool *ack);
         // calls when the nodes wish to receive some data
         void recv();
-        void sleep(uint32_t time);
+        void sleep(int32_t time);
         void join();
         void check_sync();
         // has to be called if the data wish to send any data

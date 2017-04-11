@@ -481,6 +481,7 @@ void Node::sync(){
     this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
     while(true){
         // trying to receive any packet
+        mprint("waiting to recv feedback.\n");
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
@@ -506,6 +507,8 @@ void Node::sync(){
             this->retry_count = 0;
             this->print_frame_info();
             break;
+        }else{
+          mprint("received unkown message.\n");
         }
     }
 
@@ -513,10 +516,11 @@ void Node::sync(){
 
 
 void Node::check_sync(){
-    if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync || this->retry_count >= DQN_SYNC_RETRY)
+    // returns at the start of the next frame.
+    if(millis() - this->last_sync_time > DQN_SYNC_INTERVAL || !this->has_sync || this->retry_count >= DQN_SYNC_RETRY){
+        mprint("need to resync.\n");
         this->sync();
-    // switch to TR mode
-    this->rf95->setModemConfig(this->rf95->DQN_SLOW_NOCRC);
+      }
 
     // determine the starting time for the upcoming frame
     uint32_t time_diff = millis() - this->time_offset;
@@ -542,7 +546,9 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // send a TR request
         // sleep at the last to ensure the timing
         this->sleep(frame_start + chosen_mini_slot * (DQN_TR_LENGTH + DQN_SHORT_GUARD) - millis());
-        
+
+        // switch to TR mode
+        this->rf95->setModemConfig(this->rf95->DQN_SLOW_NOCRC);
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
         dqn_send(this->rf95, tr, sizeof(struct dqn_tr)); //, this->rf95->DQN_SLOW_NOCRC);
 
@@ -551,13 +557,23 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
 
         // switch to feedback mode
-        while(this->is_receiving()); // wait till the transmission is finished
-        this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
+        // no need to wait here.
+        //while(this->is_receiving()); // wait till the transmission is finished
 
-        this->sleep(feedback_start_time - millis());
+        mprint("feedback length is %d\n", feedback_length);
+        mprint("feedback start is %d\n", feedback_start_time);
+        mprint("feedback end   is %d\n", feedback_start_time + this->feedback_length);
+        mprint("now it is         %d\n", millis());
+        mprint("sleeping %d\n", feedback_start_time - millis() - DQN_GUARD);
+
+        this->sleep(feedback_start_time - millis() - DQN_GUARD);
+        this->rf95->setModemConfig(DQN_RATE_FEEDBACK);
+
         // receive feedback.
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->feedback_length + DQN_GUARD, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+        uint8_t len = dqn_recv(this->rf95,
+          this->_msg_buf, this->feedback_length + 10*DQN_GUARD,
+          DQN_RATE_FEEDBACK, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
@@ -567,7 +583,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
             continue;
         }
         if(len == 0){
-            mprint("no feedback received\n");
+            mprint("%d\tno feedback received\n",millis());
             this->retry_count++;
             continue;
         }
@@ -841,7 +857,9 @@ uint16_t Node::mpl(){
     return this->max_payload;
 }
 
-void Node::sleep(uint32_t time){
+void Node::sleep(int32_t time){
+    if (time < 0)
+      return;
     uint32_t start = millis();
     while(millis() < start + time);
     // TODO:

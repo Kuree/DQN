@@ -542,7 +542,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         // send a TR request
         // sleep at the last to ensure the timing
         this->sleep(frame_start + chosen_mini_slot * (DQN_TR_LENGTH + DQN_SHORT_GUARD) - millis());
-        
+
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
         dqn_send(this->rf95, tr, sizeof(struct dqn_tr)); //, this->rf95->DQN_SLOW_NOCRC);
 
@@ -1188,15 +1188,19 @@ void Server::run(){
     while(true){
         // frame start
         uint32_t frame_start = millis();
-        //mprint("frame start at %d\n", frame_start);
+        uint32_t feedback_start = frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr;
+
+        // TRs
+        this->rf95->setModemConfig(DQN_SLOW_NOCRC);
         this->receive_tr();
-        this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
-        while(millis() < frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr +
-                DQN_GUARD - DQN_SHORT_GUARD);
-        uint32_t feedback_start = millis();
+
         // feedback frame
+        while(millis() < feedback_start );
+        this->rf95->setModemConfig(DQN_RATE_FEEDBACK);
         this->send_feedback();
-        this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
+
+        // data slots
+        this->rf95->setModemConfig(DQN_RATE_FEEDBACK);
         while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
         // data time
         this->recv_data();

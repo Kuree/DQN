@@ -282,11 +282,11 @@ RadioDevice::RadioDevice(struct RH_RF95::pin_config pc, float freq):
   }else{
       mprint("rf95 init success.\n");
   }
-  if (!rf95->setFrequency (RF95_FREQ)){
+  if (!rf95->setFrequency (freq)){
       mprint("rf95 set freq failed.\n");
       exit(-96);
   }else{
-      mprint("rf95 set freq to %5.2f.\n", RF95_FREQ);
+      mprint("rf95 set freq to %5.2f.\n", freq);
   }
 
   if (configureModem(TR)){
@@ -301,7 +301,7 @@ RadioDevice::RadioDevice(struct RH_RF95::pin_config pc, float freq):
   mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
 
   rf95->setFhssHoppingPeriod(0);
-  rf95->setFrequency(freq);
+  //rf95->setFrequency(freq);
   rf95->setTxPower(13);
 }
 bool RadioDevice::configureModem(DqnModemMode mode){
@@ -539,7 +539,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         this->check_sync();
         mprint("starting to send TR at time %d with offset %d...\n", millis(), this->time_offset);
         uint32_t frame_start = millis();
-        uint16_t chosen_mini_slot = rand() % this->num_tr;
+        uint16_t chosen_mini_slot = 4; //rand() % this->num_tr;
         mprint("choosen at slot %d tr messageid: %X\n", chosen_mini_slot, tr->messageid);
         // send a TR request
         // sleep at the last to ensure the timing
@@ -562,16 +562,16 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         mprint("feedback start is %d\n", feedback_start_time);
         mprint("feedback end   is %d\n", feedback_start_time + this->feedback_length);
         mprint("now it is         %d\n", millis());
-        mprint("sleeping %d\n", feedback_start_time - millis() - DQN_GUARD);
+        mprint("sleeping %d\n", feedback_start_time - millis());
 
-        this->sleep(feedback_start_time - millis() - DQN_GUARD);
+        this->sleep(feedback_start_time - millis());
         configureModem(Feedback);
 
         // receive feedback.
         mprint("Wakeup to recv feedback, now its: %d\n", millis());
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95,
-          this->_msg_buf, this->feedback_length + 10*DQN_GUARD, &received_time);
+          this->_msg_buf, this->feedback_length + DQN_GUARD, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
@@ -754,6 +754,14 @@ void Node::join_data(int index){
             return;
         }
         struct dqn_join_resp *resp = (struct dqn_join_resp*)this->_msg_buf;
+        if(resp->version != DQN_VERSION) {
+            mprint("wrong DQ-N version number. Got %d, expected: %d\n", resp->version, DQN_VERSION);
+            while(1);
+        }
+        if(resp->nodeid == 0) {
+            mprint("wrong node id. node id cannot be 0\n");
+            while(1);
+        }
         this->nodeid = resp->nodeid;
         mprint("node id set to %d\n", this->nodeid);
         this->has_joined = true;
@@ -777,6 +785,8 @@ uint32_t Node::send(bool *ack){
     // peak the queue
     if(!this->message_queue.size())
         return 0;
+    if(!this->has_joined)
+        this->join();
     struct dqn_node_message message = this->message_queue.front();
     uint8_t size = message.size;
     uint8_t num_of_slots = size / this->max_payload;
@@ -1208,10 +1218,12 @@ void Server::run(){
     while(true){
         // frame start
         uint32_t frame_start = millis();
-        uint32_t feedback_start = frame_start + (this->num_tr * (DQN_TR_LENGTH + DQN_SHORT_GUARD));
-        uint32_t data_start = feedback_start + DQN_GUARD + this->feedback_length + DQN_GUARD;
-        uint32_t ack_start = data_start + DQN_GUARD + (this->num_data_slot * (this->data_length + DQN_SHORT_GUARD)) + DQN_GUARD;
+        uint32_t feedback_start = frame_start + (this->num_tr * (DQN_TR_LENGTH + DQN_SHORT_GUARD)) - DQN_SHORT_GUARD + DQN_GUARD;
+        uint32_t data_start = feedback_start + this->feedback_length + DQN_GUARD;
+        uint32_t ack_start = data_start + (this->num_data_slot * (this->data_length + DQN_SHORT_GUARD)) - DQN_SHORT_GUARD + DQN_GUARD;
         uint32_t frame_end = ack_start + this->ack_length + DQN_GUARD;
+
+        mprint("frame length:%d\n", frame_end - frame_start);
 
         if (frame_end < frame_start){
           // hack to make timer wrap around irrelivent.

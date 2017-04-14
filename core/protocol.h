@@ -366,7 +366,7 @@ class Node: public RadioDevice{
         void receive_data(int index);
     public:
         // this will generate a fixed hardware addresss
-        Node(struct RH_RF95::pin_config pc, float freq);
+        Node(struct RH_RF95::pin_config pc, float freq = RF95_FREQ);
         Node(struct RH_RF95::pin_config pc, float freq, uint8_t *hw_addr);
         void sync();
         // send returns how many bytes been sent

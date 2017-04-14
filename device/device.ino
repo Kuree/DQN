@@ -14,10 +14,7 @@ struct RH_RF95::pin_config pc_feather = {
 };
 
 void setup() {
-    Serial.begin(57600);
-    while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
-
-    node = new (__node_buf)Node(pc_feather, 915.0);
+    node = new (__node_buf)Node(pc_feather);
     mprint("joining the network\n");
     node->join();
 }
@@ -33,7 +30,7 @@ void print_packet(uint8_t *data, uint8_t size){
 
 void loop() {
     delay(random(4000) + 1000); // prevent it from sending too fast
-    uint16_t data_size = random(node->mpl() * 2);
+    uint16_t data_size = random(node->mpl() * 2 - 5) + 5;
     mprint("sending %d bytes\n");
     uint8_t data[data_size];
     for(int i = 0; i < data_size; i++){

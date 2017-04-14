@@ -132,7 +132,7 @@ struct dqn_tr* dqn_make_tr_join(
         bool high_rate){
     req->version = DQN_VERSION;
     req->messageid = DQN_MESSAGE_TR_JOIN | (DQN_MESSAGE_MASK & 2) | (high_rate << 2);
-    req->nodeid = 0; // undefined
+    req->nodeid = 0; // undefinedg
     req->crc = 0;
     uint8_t crc = get_crc8((char*)req, sizeof(struct dqn_tr));
     req->crc = crc;
@@ -173,30 +173,31 @@ void mprint(const char *format, ...){
 }
 
 void dqn_send(RH_RF95 *rf95, const void* data, size_t size){
+
     if(!rf95->send((uint8_t *)data, size)){
         mprint("send failed");
     }
 }
+//
+// void dqn_send(
+//         RH_RF95 *rf95,
+//         const void* data,
+//         size_t size,
+//         RH_RF95::ModemConfigChoice choice){
+//     rf95->setModemConfig(choice);
+//     dqn_send(rf95, data, size);
+// }
 
-void dqn_send(
-        RH_RF95 *rf95,
-        const void* data,
-        size_t size,
-        RH_RF95::ModemConfigChoice choice){
-    rf95->setModemConfig(choice);
-    dqn_send(rf95, data, size);
-}
-
-uint8_t dqn_recv(
-        RH_RF95 *rf95,
-        uint8_t* buf,
-        uint32_t wait_time,
-        RH_RF95::ModemConfigChoice rate,
-        uint32_t *received_time){
-    // set the config
-    rf95->setModemConfig(rate);
-    return dqn_recv(rf95, buf, wait_time, received_time);
-}
+// uint8_t dqn_recv(
+//         RH_RF95 *rf95,
+//         uint8_t* buf,
+//         uint32_t wait_time,
+//         RH_RF95::ModemConfigChoice rate,
+//         uint32_t *received_time){
+//     // set the config
+//     rf95->setModemConfig(rate);
+//     return dqn_recv(rf95, buf, wait_time, received_time);
+// }
 
 uint8_t dqn_recv(
         RH_RF95 *rf95,
@@ -252,12 +253,13 @@ void print_ack(uint8_t *ack, size_t size){
     mprint("------------------------------\n");
 }
 
-void print_feedback(struct dqn_feedback* feedback){
+void print_feedback(struct dqn_feedback* feedback, int8_t rssi){
     mprint("------------FEEDBACK-----------\n");
-    mprint("frame param: \t0x%X CRQ: %d DTQ: %d\n",
+    mprint("frame param: \t0x%X CRQ: %d DTQ: %d RSSI: %d dBm\n",
             feedback->frame_param,
             feedback->crq_length,
-            feedback->dtq_length);
+            feedback->dtq_length,
+            rssi);
     mprint("timestamp:   %d\t", feedback->timestamp);
     mprint("TR result:   \t");
     for(int i = 0; i < get_tr(feedback->frame_param) / 4; i++) {
@@ -269,78 +271,69 @@ void print_feedback(struct dqn_feedback* feedback){
     mprint("-------------------------------\n");
 }
 
+RadioDevice::RadioDevice(struct RH_RF95::pin_config pc, float freq):
+  freq(freq)
+{
+  this->rf95 = new (this->_rf95_buf)RH_RF95(pc);
 
-
-RH_RF95* setup_radio(RH_RF95 *rf95){
-
-  if (rf95->_pins.tx_led >= 0){
-    pinMode(rf95->_pins.tx_led, OUTPUT);
-    digitalWrite(rf95->_pins.tx_led, LOW);
-
+  if (!rf95->init()){
+      mprint("rf95 init failed.\n");
+      exit(-95);
+  }else{
+      mprint("rf95 init success.\n");
   }
-  if (rf95->_pins.rx_led >= 0){
-    pinMode(rf95->_pins.rx_led, OUTPUT);
-    digitalWrite(rf95->_pins.rx_led, LOW);
-
+  if (!rf95->setFrequency (RF95_FREQ)){
+      mprint("rf95 set freq failed.\n");
+      exit(-96);
+  }else{
+      mprint("rf95 set freq to %5.2f.\n", RF95_FREQ);
   }
 
-  pinMode(rf95->_pins.reset, OUTPUT);
-  digitalWrite(rf95->_pins.reset, HIGH);
-  delay(50);
-  digitalWrite(rf95->_pins.reset, LOW);
-  delay(50);
-  digitalWrite(rf95->_pins.reset, HIGH);
-  delay(50);
+  if (configureModem(TR)){
+      mprint("rf95 configuration set.\n");
+  }else{
+      mprint("rf95 configuration failed.\n");
+      exit(-97);
+  }
 
-  mprint("Reset high, waiting 1 sec.\n");
-  delay(1000);
+  // set the preamble
+  rf95->setPreambleLength(DQN_PREAMBLE);
+  mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
 
-#ifdef ARDUINO
-    Serial.begin(57600);
-    while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
-//#else
-//    wiringPiSetup();
-#endif
-    if (!rf95->init()){
-        mprint("rf95 init failed.\n");
-        exit(-95);
-    }else{
-        mprint("rf95 init success.\n");
-    }
-    if (!rf95->setFrequency (RF95_FREQ)){
-        mprint("rf95 set freq failed.\n");
-        exit(-96);
-    }else{
-        mprint("rf95 set freq to %5.2f.\n", RF95_FREQ);
-    }
-
-    if (rf95->setModemConfig(rf95->Bw500Cr45Sf128)){
-        mprint("rf95 configuration set to BW=500 kHz BW, CR=4/8 CR, SF=12.\n");
-    }else{
-        mprint("rf95 configuration failed.\n");
-        exit(-97);
-    }
-
-    // set the preamble
-    rf95->setPreambleLength(DQN_PREAMBLE);
-    mprint("rf95 set preamble to %d\n", DQN_PREAMBLE);
-
-    rf95->setTxPower(23);
-
-    return rf95;
+  rf95->setFhssHoppingPeriod(0);
+  rf95->setFrequency(freq);
+  rf95->setTxPower(13);
 }
+bool RadioDevice::configureModem(DqnModemMode mode){
 
-void RadioDevice::setup(struct RH_RF95::pin_config pc){
-// #ifdef ARDUINO
-//     this->rf95 = new (this->_rf95_buf)RH_RF95(RFM95_CS, RFM95_INT);
-// #else
-//     this->rf95 = new (this->_rf95_buf)RH_RF95(RF95_CS_PIN, RF95_INT_PIN);
-// #endif
-    this->rf95 = new (this->_rf95_buf)RH_RF95(pc);
-    setup_radio(this->rf95);
+  switch(mode){
+    case TR:
+      return rf95->setModemConfig(
+          DQN_FRAME_BW,
+          DQN_FRAME_CR,
+          DQN_FRAME_FIXED_LEN,
+          DQN_FRAME_SF,
+          DQN_FRAME_NOCRC,
+          DQN_FRAME_LOW_DR);
+    break;
+
+    case Feedback :
+    case Ack :
+    case Data :
+      return rf95->setModemConfig(
+            DQN_FRAME_BW,
+            DQN_FRAME_CR,
+            DQN_FRAME_VARIABLE_LEN,
+            DQN_FRAME_SF,
+            DQN_FRAME_CRC,
+            DQN_FRAME_LOW_DR);
+    break;
+
+    default:
+      mprint("!!!INVALID MODE!!!\n");
+  }
+  return false;
 }
-
-
 void RadioDevice::parse_frame_param(struct dqn_feedback *feedback){
     uint16_t frame_param = feedback->frame_param;
     uint8_t fpp = frame_param & 0x3;
@@ -457,8 +450,8 @@ void RadioDevice::print_frame_info(){
     mprint("--------------------------------------\n");
 }
 
-void Node::ctor(struct RH_RF95::pin_config pc, uint8_t *hw_addr){
-    this->setup(pc);
+void Node::ctor(struct RH_RF95::pin_config pc, uint8_t *hw_addr)
+{
     this->nodeid = 0;
     this->has_sync = false;
     this->has_joined = false;
@@ -466,24 +459,29 @@ void Node::ctor(struct RH_RF95::pin_config pc, uint8_t *hw_addr){
     memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
 }
 
-Node::Node(struct RH_RF95::pin_config pc, uint8_t *hw_addr){
+Node::Node(struct RH_RF95::pin_config pc, float freq, uint8_t *hw_addr)
+:RadioDevice(pc, freq)
+{
     this->ctor(pc, hw_addr);
 }
 
-Node::Node(struct RH_RF95::pin_config pc){
+Node::Node(struct RH_RF95::pin_config pc, float freq)
+:RadioDevice(pc, freq)
+{
     uint8_t hw_addr[HW_ADDR_LENGTH] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47};
     this->ctor(pc, hw_addr);
 }
 
 void Node::sync(){
-    // continuously listening till a valid feedbac is received
+    // continuously listening till a valid feedback is received
     // switch mode
-    this->rf95->setModemConfig(this->rf95->DQN_RATE_FEEDBACK);
+    configureModem(Feedback);
     while(true){
         // trying to receive any packet
         mprint("waiting to recv feedback.\n");
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, 0, this->rf95->DQN_RATE_FEEDBACK, &received_time);
+
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, 0, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(feedback->version == DQN_VERSION && feedback->messageid == DQN_MESSAGE_FEEDBACK){
             // we find the actual feedback
@@ -548,7 +546,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         this->sleep(frame_start + chosen_mini_slot * (DQN_TR_LENGTH + DQN_SHORT_GUARD) - millis());
 
         // switch to TR mode
-        this->rf95->setModemConfig(this->rf95->DQN_SLOW_NOCRC);
+        configureModem(TR);
         this->rf95->setPayloadLength(sizeof(struct dqn_tr));
         dqn_send(this->rf95, tr, sizeof(struct dqn_tr)); //, this->rf95->DQN_SLOW_NOCRC);
 
@@ -567,13 +565,13 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         mprint("sleeping %d\n", feedback_start_time - millis() - DQN_GUARD);
 
         this->sleep(feedback_start_time - millis() - DQN_GUARD);
-        this->rf95->setModemConfig(DQN_RATE_FEEDBACK);
+        configureModem(Feedback);
 
         // receive feedback.
+        mprint("Wakeup to recv feedback, now its: %d\n", millis());
         uint32_t received_time;
         uint8_t len = dqn_recv(this->rf95,
-          this->_msg_buf, this->feedback_length + 10*DQN_GUARD,
-          DQN_RATE_FEEDBACK, &received_time);
+          this->_msg_buf, this->feedback_length + 10*DQN_GUARD, &received_time);
         struct dqn_feedback *feedback = (struct dqn_feedback*)this->_msg_buf;
         if(feedback->version != DQN_VERSION || feedback->messageid != DQN_MESSAGE_FEEDBACK){
             // somehow it's wrong
@@ -712,7 +710,8 @@ void Node::send_data(int index){
         if (size < this->max_payload)
             this->message_queue.pop();
     }
-    dqn_send(this->rf95, data, size, this->rf95->DQN_SLOW_CRC);
+    configureModem(Data);
+    dqn_send(this->rf95, data, size);
 }
 
 
@@ -721,13 +720,12 @@ void Node::receive_data(int index){
     // 1. fix the rate
     // always request 2 data slots
     if(index == 0){
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD,
-                this->rf95->DQN_SLOW_CRC, NULL);
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
         mprint("received len: %d\n", len);
     } else {
         // assume the first slot is always full
         uint8_t len = dqn_recv(this->rf95, this->_msg_buf + this->max_payload,
-                this->data_length + DQN_SHORT_GUARD, this->rf95->DQN_SLOW_CRC, NULL);
+                this->data_length + DQN_SHORT_GUARD, NULL);
         mprint("received len: %d\n", len);
         len += this->max_payload;
         if(this->on_receive)
@@ -746,12 +744,11 @@ void Node::join_data(int index){
         struct dqn_join_req req;
         dqn_make_join_req(&req, this->hw_addr);
         mprint("sending join data at %d\n", millis());
-        dqn_send(this->rf95, &req, sizeof(struct dqn_join_req), this->rf95->DQN_RATE_FEEDBACK);
+        dqn_send(this->rf95, &req, sizeof(struct dqn_join_req));
     } else if(index == 1) {
         // receive join response
         mprint("receiving joining data at %d\n", millis());
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD,
-                this->rf95->DQN_RATE_FEEDBACK, NULL);
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
         if(len == 0){
             mprint("could not receive joining information\n");
             return;
@@ -799,7 +796,7 @@ uint32_t Node::send(bool *ack){
         *ack = false;
         // need to set offset to the beginning of the ACK frame
         uint16_t ack_relative_time = this->frame_length - DQN_GUARD - this->ack_length;
-        this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
+        configureModem(Ack);
         uint16_t current_time = (millis() - this->time_offset) % this->frame_length;
         uint16_t sleep_time = ack_relative_time - current_time;
         mprint("sleep for ack: %d\n", sleep_time);
@@ -867,9 +864,12 @@ void Node::sleep(int32_t time){
 }
 
 Server::Server(uint32_t networkid,
+        float freq,
         struct RH_RF95::pin_config pc,
         void (*on_receive)(uint8_t*, size_t, uint8_t*),
-        uint16_t (*on_download)(uint8_t*, uint8_t*, uint8_t)){
+        uint16_t (*on_download)(uint8_t*, uint8_t*, uint8_t))
+:RadioDevice(pc, freq)
+{
     this->networkid = networkid;
     this->on_receive = on_receive;
     this->on_download = on_download;
@@ -881,8 +881,6 @@ Server::Server(uint32_t networkid,
     this->change_network_config(0, DQN_BF_ERROR, 6, 4);
 
     this->reset_frame();
-
-    this->setup(pc);
 }
 
 void Server::send_ack(){
@@ -890,7 +888,7 @@ void Server::send_ack(){
     if(this->num_data_slot % 8)
         size++;
     print_ack(this->ack_buf, size);
-    dqn_send(this->rf95, this->ack_buf, size, this->rf95->DQN_SLOW_CRC);
+    dqn_send(this->rf95, this->ack_buf, size);
 }
 
 void Server::send_feedback(){
@@ -906,9 +904,11 @@ void Server::send_feedback(){
     uint16_t frame_param = this->get_frame_param();
     uint8_t feedback_size = dqn_make_feedback((struct dqn_feedback*)this->_msg_buf, this->networkid, this->crq, this->dtq,
             frame_param, slots, this->num_tr, &this->bloom);
+
+    //mprint("Feedback size: %d\n", feedback_size);
     // assuming the time is correct
-    dqn_send(this->rf95, this->_msg_buf, feedback_size, this->rf95->DQN_RATE_FEEDBACK);
-    print_feedback((struct dqn_feedback*)this->_msg_buf);
+    dqn_send(this->rf95, this->_msg_buf, feedback_size);
+    print_feedback((struct dqn_feedback*)this->_msg_buf, 0);
 
 }
 
@@ -937,8 +937,9 @@ void Server::receive_tr(){
     for(int i = 0; i < this->num_tr; i++){
         // loop throw each TR slots
         uint32_t received_time;
-        uint8_t len = dqn_recv(this->rf95, this->_msg_buf, DQN_TR_LENGTH + DQN_SHORT_GUARD,
-                this->rf95->DQN_SLOW_NOCRC, &received_time);
+        uint8_t len = dqn_recv(this->rf95, this->_msg_buf,
+                DQN_TR_LENGTH + DQN_SHORT_GUARD,
+                &received_time);
         if(len != sizeof(struct dqn_tr)){
             if(len > 0)
                 mprint("received a len: %d\n", len);
@@ -1014,7 +1015,7 @@ void Server::recv_node(){
     // this is definitely two slots
     uint32_t start_time = millis();
     // first slot is receiving
-    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, this->rf95->DQN_SLOW_CRC, NULL);
+    uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
     if(len == 0){
         mprint("no node registration received\n");
         return;
@@ -1035,7 +1036,7 @@ void Server::recv_node(){
     // add skipping protocol overhead
     while(millis() < this->data_length + DQN_SHORT_GUARD + start_time);
     dqn_make_join_resp((struct dqn_join_resp*)this->_msg_buf, hw_addr, nodeid);
-    dqn_send(this->rf95, this->_msg_buf, sizeof(struct dqn_join_resp), this->rf95->DQN_SLOW_CRC);
+    dqn_send(this->rf95, this->_msg_buf, sizeof(struct dqn_join_resp));
 }
 
 void Server::recv_data(){
@@ -1059,7 +1060,8 @@ void Server::recv_data(){
             uint8_t *hw_addr = this->node_table[nodeid];
             uint8_t meta = messageid & DQN_MESSAGE_MASK;
             bool downstream = meta & DQN_MESSAGE_DOWNSTREAM;
-            bool high_rate = (meta >> 3) & 1;
+            // high rate is not supported at the moment.
+            //bool high_rate = (meta >> 3) & 1;
             uint8_t num_of_slots = meta & 3;
             if(downstream) {
                 uint16_t size = this->on_download(hw_addr, this->_msg_buf, num_of_slots * this->max_payload);
@@ -1073,16 +1075,17 @@ void Server::recv_data(){
                     if(size > this->max_payload && num_of_slots == 2){
                          uint32_t start = millis();
                          mprint("sending data slot 0\n");
-                         dqn_send(this->rf95, data, this->max_payload,
-                                 high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
+
+                         dqn_send(this->rf95, data, this->max_payload);
+                              // high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
                          while(millis() < start + this->data_length + DQN_SHORT_GUARD){
                          }
                          mprint("sending data slot 1\n");
-                         dqn_send(this->rf95, data + this->max_payload, size % this->max_payload,
-                                 high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
+                         dqn_send(this->rf95, data + this->max_payload, size % this->max_payload);
+                        //         high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
                     } else { // if the size is larger than it's allowed, it's the provider's fault
-                        dqn_send(this->rf95, data, size > this->max_payload? this->max_payload : size,
-                                high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
+                        dqn_send(this->rf95, data, size > this->max_payload? this->max_payload : size);
+                                //high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC);
                     }
                 }
                 i += num_of_slots;
@@ -1092,8 +1095,8 @@ void Server::recv_data(){
             // used to continuously fill in the buffer
             uint8_t *data_buf = this->_msg_buf;
             for(int index = 0; index < num_of_slots; index++){
-                uint8_t len = dqn_recv(this->rf95, data_buf, this->data_length + DQN_SHORT_GUARD,
-                        high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
+                uint8_t len = dqn_recv(this->rf95, data_buf, this->data_length + DQN_SHORT_GUARD);
+                        //high_rate? this->rf95->DQN_FAST_CRC:this->rf95->DQN_SLOW_CRC, NULL);
                 if(!hw_addr){
                     mprint("node id %d not found\n", nodeid);
                     i++;
@@ -1117,8 +1120,7 @@ void Server::recv_data(){
         }
         else{
             // ALOHA
-            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD,
-                    this->rf95->DQN_SLOW_CRC, NULL);
+            uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
             if(len > 0)
                 mprint("received data length %d\n", len);
         }
@@ -1206,27 +1208,46 @@ void Server::run(){
     while(true){
         // frame start
         uint32_t frame_start = millis();
-        uint32_t feedback_start = frame_start + (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr;
+        uint32_t feedback_start = frame_start + (this->num_tr * (DQN_TR_LENGTH + DQN_SHORT_GUARD));
+        uint32_t data_start = feedback_start + DQN_GUARD + this->feedback_length + DQN_GUARD;
+        uint32_t ack_start = data_start + DQN_GUARD + (this->num_data_slot * (this->data_length + DQN_SHORT_GUARD)) + DQN_GUARD;
+        uint32_t frame_end = ack_start + this->ack_length + DQN_GUARD;
+
+        if (frame_end < frame_start){
+          // hack to make timer wrap around irrelivent.
+          mprint("######## TIMER WRAP THIS FRAME SKIP IT! ###########\n");
+          while (millis() > frame_end); // wait for wrap.
+          while (millis() < frame_end); // now wait for frame.
+          continue;
+        }
 
         // TRs
-        this->rf95->setModemConfig(DQN_SLOW_NOCRC);
+        // testing dont' send TR.s
+        configureModem(TR);
         this->receive_tr();
 
         // feedback frame
         while(millis() < feedback_start );
-        this->rf95->setModemConfig(DQN_RATE_FEEDBACK);
+        configureModem(Feedback);
         this->send_feedback();
+        this->rf95->waitPacketSent();
 
         // data slots
-        this->rf95->setModemConfig(DQN_RATE_FEEDBACK);
-        while(millis() < feedback_start + this->feedback_length + DQN_GUARD);
+        configureModem(Data);
+        while(millis() < data_start);
         // data time
         this->recv_data();
+
+        configureModem(Ack);
+        while(millis() < ack_start);
+
         // this is ACK time
-        uint32_t ack_start = millis();
         //this->send_ack();
-        //this->rf95->setModemConfig(this->rf95->DQN_SLOW_CRC);
-        while(millis() < ack_start + this->ack_length + DQN_GUARD);
+        while(millis() < frame_end);
+
+        if (millis()> frame_end){
+          mprint("frame %d ms over time.\n", millis() - frame_end);
+        }
         this->end_cycle();
     }
 }

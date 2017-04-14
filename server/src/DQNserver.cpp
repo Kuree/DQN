@@ -91,8 +91,10 @@ int main (int argc, const char* argv[] ){
 #else
   #error *** Define LORAHATV1 or LORAHATV2 eg $make CFLAGS=-DLORAHATV2****
 #endif
-    server = new (__server_buf)Server(0, pc_lorahat,
-        &print_message, &on_download);
+    server = new (__server_buf)Server(0,
+      915.0,
+      pc_lorahat,
+      &print_message, &on_download);
 #else
 void setup(){
   struct RH_RF95::pin_config pc_feather = {
@@ -103,7 +105,9 @@ void setup(){
       .tx_led = 13,
       .rx_led = 13
     };
-    server = new (__server_buf)Server(0, pc_feather,
+    server = new (__server_buf)Server(0,
+      915.0,
+      pc_feather,
       &print_message, &on_download);
 }
 

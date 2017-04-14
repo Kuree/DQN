@@ -17,12 +17,14 @@
 #define DQN_TR_LENGTH 150
 #define DQN_PREAMBLE 6
 
+//#define DQN_PREAMBLE 12
+
 // define DQN encodings
-// TODO: fix all the rates
-#define DQN_RATE_FEEDBACK RH_RF95::Bw500Cr48Sf4096
-#define DQN_SLOW_CRC RH_RF95::Bw500Cr48Sf4096
-#define DQN_FAST_CRC RH_RF95::Bw500Cr45Sf4096
-#define DQN_SLOW_NOCRC RH_RF95::Bw500Cr48Sf4096NoHeadNoCrc
+// // TODO: fix all the rates
+// #define DQN_RATE_FEEDBACK RH_RF95::Bw500Cr48Sf4096
+// #define DQN_SLOW_CRC RH_RF95::Bw500Cr48Sf4096
+// #define DQN_FAST_CRC RH_RF95::Bw500Cr45Sf4096
+// #define DQN_SLOW_NOCRC RH_RF95::Bw500Cr48Sf4096NoHeadNoCrc
 
 // device only
 #define DQN_IDLE 0
@@ -93,9 +95,17 @@ using namespace std;
 // frame config
 #define DQN_BF_ERROR 0.01
 #define DQN_FRAME_SF 12
+
+//#define DQN_FRAME_SF 10
 #define DQN_FRAME_BW 500
 #define DQN_FRAME_CRC true
-#define DQN_FRAME_FIXED_LEN false
+#define DQN_FRAME_NOCRC false
+
+// FIXEDLEN means IMPLICIT header (TRUE)
+// VARIABELLEN means EXPLICIT header (false)
+#define DQN_FRAME_FIXED_LEN true
+#define DQN_FRAME_VARIABLE_LEN false
+
 #define DQN_FRAME_CR 4
 #define DQN_FRAME_LOW_DR false
 
@@ -208,22 +218,22 @@ void dqn_send(
         RH_RF95 *rf95,
         const void* data,
         size_t size);
-
-void dqn_send(
-        RH_RF95 *rf95,
-        const void* data,
-        size_t size,
-        RH_RF95::ModemConfigChoice choice);
+//
+// void dqn_send(
+//         RH_RF95 *rf95,
+//         const void* data,
+//         size_t size,
+//         RH_RF95::ModemConfigChoice choice);
 
 // these are wrapper functions for receive functions
 // if 0 is passed to wait_time, it will block the execution till a
 // packet is received.
-uint8_t dqn_recv(
-        RH_RF95 *rf95,
-        uint8_t* buf,
-        uint32_t wait_time,
-        RH_RF95::ModemConfigChoice choice,
-        uint32_t *received_time);
+// uint8_t dqn_recv(
+//         RH_RF95 *rf95,
+//         uint8_t* buf,
+//         uint32_t wait_time,
+//         RH_RF95::ModemConfigChoice choice,
+//         uint32_t *received_time);
 
 uint8_t dqn_recv(
          RH_RF95 *rf95,
@@ -246,7 +256,7 @@ uint8_t get_crc8(char *data, int len);
 void mprint(const char *format, ...);
 
 // for debugging and printing info only
-void print_feedback(struct dqn_feedback* feedback);
+void print_feedback(struct dqn_feedback* feedback, int8_t rssi);
 
 // defining the base class for both server and device
 // a base class wrapper for all DQN methods
@@ -255,6 +265,7 @@ class RadioDevice{
         uint8_t _rf95_buf[sizeof(RH_RF95)];
 
     protected:
+        float   freq;
         // the following four attributes specifies how long (ms) wach sub-frame is
         // how long each data slot is
         uint16_t data_length;
@@ -284,9 +295,20 @@ class RadioDevice{
         bool is_receiving();
 
     public:
+
+        typedef enum
+        {
+          TR = 0,
+          Feedback,
+          Data,
+          Ack
+        } DqnModemMode;
+
         RH_RF95 *rf95;
+        RadioDevice(struct RH_RF95::pin_config pc, float freq);
+        bool configureModem(DqnModemMode mode);
         // set up the radio
-        void setup(struct RH_RF95::pin_config pc);
+        //void setup(struct RH_RF95::pin_config pc);
         void set_hw_addr(const uint8_t *hw_addr);
         uint16_t get_frame_param();
         // get lora air time
@@ -330,7 +352,8 @@ class Node: public RadioDevice{
 
         // old C++ doesn't have delegating constructors
         // I miss C# (c++11 has it)
-        void ctor(struct RH_RF95::pin_config pc, uint8_t *hw_addr);
+        void ctor(struct RH_RF95::pin_config pc,
+          uint8_t *hw_addr);
 
         // this is for all the communication requests to the base station
         uint16_t send_request(struct dqn_tr *tr, uint8_t num_of_slots,
@@ -343,8 +366,8 @@ class Node: public RadioDevice{
         void receive_data(int index);
     public:
         // this will generate a fixed hardware addresss
-        Node(struct RH_RF95::pin_config pc);
-        Node(struct RH_RF95::pin_config pc, uint8_t *hw_addr);
+        Node(struct RH_RF95::pin_config pc, float freq);
+        Node(struct RH_RF95::pin_config pc, float freq, uint8_t *hw_addr);
         void sync();
         // send returns how many bytes been sent
         uint32_t send();
@@ -407,7 +430,8 @@ class Server: public RadioDevice{
         void end_cycle();
         void recv_node();
     public:
-        Server(uint32_t,
+        Server(uint32_t networkid,
+                float freq,
                 struct RH_RF95::pin_config pc,
                 void (*on_receive)(uint8_t*, size_t, uint8_t *),
                 uint16_t (*on_download)(uint8_t*, uint8_t*, uint8_t));

@@ -14,7 +14,10 @@ struct RH_RF95::pin_config pc_feather = {
 };
 
 void setup() {
-    node = new (__node_buf)Node(pc_feather);
+    Serial.begin(57600);
+    while (!Serial) ; // Wait for serial port to be available (does not boot headless!)
+
+    node = new (__node_buf)Node(pc_feather, 915.0);
     mprint("joining the network\n");
     node->join();
 }

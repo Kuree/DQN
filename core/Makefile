@@ -19,12 +19,12 @@ $(TARGET): $(OBJECTS) ../RadioHead/bin/libradiohead.a
 	@echo " Linking..."
 	@echo " $(AR) rcs $(TARGET) $(OBJECTS)"; $(AR) rcs $(TARGET) $(OBJECTS);
 
-$(BUILDDIR)/%.o: %.c
+$(BUILDDIR)/%.o: %.c %.h
 	@mkdir -p $(BUILDDIR)
 	@mkdir -p $(@D)
 	@echo " gcc $(CFLAGS) $(INC) -c -o $@ $<"; gcc $(CFLAGS) $(INC) -c -o $@ $<
 
-$(BUILDDIR)/%.o: %.cpp
+$(BUILDDIR)/%.o: %.cpp %.h
 	@mkdir -p $(BUILDDIR)
 	@mkdir -p $(@D)
 	@echo " g++ $(CFLAGS) $(INC) -c -o $@ $<"; g++ $(CFLAGS) $(INC) -c -o $@ $<

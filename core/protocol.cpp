@@ -524,7 +524,7 @@ void Node::check_sync(){
     uint32_t time_diff = millis() - this->time_offset;
     if(this->frame_length == 0)
         mprint("ERROR!\n");
-    uint32_t remain_time = frame_length - (time_diff % this->frame_length);
+    uint32_t remain_time = this->frame_length - (time_diff % this->frame_length);
     this->sleep(remain_time);
 }
 
@@ -539,7 +539,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         this->check_sync();
         mprint("starting to send TR at time %d with offset %d...\n", millis(), this->time_offset);
         uint32_t frame_start = millis();
-        uint16_t chosen_mini_slot = 4; //rand() % this->num_tr;
+        uint16_t chosen_mini_slot = rand() % this->num_tr;
         mprint("choosen at slot %d tr messageid: %X\n", chosen_mini_slot, tr->messageid);
         // send a TR request
         // sleep at the last to ensure the timing
@@ -554,16 +554,13 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
         uint32_t total_tr_time = (DQN_TR_LENGTH + DQN_SHORT_GUARD) * this->num_tr - DQN_SHORT_GUARD;
         uint32_t feedback_start_time = frame_start + total_tr_time + DQN_GUARD;
 
-        // switch to feedback mode
-        // no need to wait here.
-        //while(this->is_receiving()); // wait till the transmission is finished
-
+#ifdef DEBUG
         mprint("feedback length is %d\n", feedback_length);
         mprint("feedback start is %d\n", feedback_start_time);
         mprint("feedback end   is %d\n", feedback_start_time + this->feedback_length);
         mprint("now it is         %d\n", millis());
         mprint("sleeping %d\n", feedback_start_time - millis());
-
+#endif
         this->sleep(feedback_start_time - millis());
         configureModem(Feedback);
 
@@ -1123,7 +1120,6 @@ void Server::recv_data(){
 
                 i++;
             }
-            printf("total len is %d\n", total_len);
             if(total_len && this->on_receive) {
                 this->on_receive(this->_msg_buf, total_len, hw_addr);
             }
@@ -1131,8 +1127,9 @@ void Server::recv_data(){
         else{
             // ALOHA
             uint8_t len = dqn_recv(this->rf95, this->_msg_buf, this->data_length + DQN_SHORT_GUARD, NULL);
-            if(len > 0)
-                mprint("received data length %d\n", len);
+            if(len && this->on_receive) {
+                this->on_receive(this->_msg_buf, len, NULL);
+            }
         }
 
         i++;
@@ -1222,8 +1219,6 @@ void Server::run(){
         uint32_t data_start = feedback_start + this->feedback_length + DQN_GUARD;
         uint32_t ack_start = data_start + (this->num_data_slot * (this->data_length + DQN_SHORT_GUARD)) - DQN_SHORT_GUARD + DQN_GUARD;
         uint32_t frame_end = ack_start + this->ack_length + DQN_GUARD;
-
-        mprint("frame length:%d\n", frame_end - frame_start);
 
         if (frame_end < frame_start){
           // hack to make timer wrap around irrelivent.

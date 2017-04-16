@@ -146,6 +146,8 @@ struct dqn_join_req* dqn_make_join_req(
     req->version = DQN_VERSION;
     req->messageid = DQN_MESSAGE_JOIN_REQ;
     memcpy(req->hw_addr, hw_addr, HW_ADDR_LENGTH);
+    mprint("using addr: %X:%X:%X:%X:%X:%X\n", req->hw_addr[0], req->hw_addr[1], 
+            req->hw_addr[2], req->hw_addr[3], req->hw_addr[4], req->hw_addr[5]);
     return req;
 }
 
@@ -456,7 +458,7 @@ void Node::ctor(struct RH_RF95::pin_config pc, uint8_t *hw_addr)
     this->has_sync = false;
     this->has_joined = false;
 
-    memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
+    this->set_hw_addr(hw_addr);
 }
 
 Node::Node(struct RH_RF95::pin_config pc, float freq, uint8_t *hw_addr)
@@ -470,6 +472,10 @@ Node::Node(struct RH_RF95::pin_config pc, float freq)
 {
     uint8_t hw_addr[HW_ADDR_LENGTH] = {0x42, 0x43, 0x44, 0x45, 0x46, 0x47};
     this->ctor(pc, hw_addr);
+}
+
+void Node::set_hw_addr(uint8_t *hw_addr){
+    memcpy(this->hw_addr, hw_addr, HW_ADDR_LENGTH);
 }
 
 void Node::sync(){
@@ -635,7 +641,8 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                         this->sleep(data_start_time - millis());
                         // frame counter is used to make sure we won't send data in protocol overhead
                         int frame_counter = 0;
-                        for(int j = 0; j < num_of_slots; j++){
+                        int j = 0;
+                        while(j < num_of_slots){
                             if(!dtq){
                                 uint32_t data_slot_start = millis();
                                 switch(send_command){
@@ -650,6 +657,7 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                                         this->join_data(j);
                                         break;
                                 }
+                                j++;
                                 this->sleep((data_slot_start + this->data_length + DQN_SHORT_GUARD) - millis());
                             } else {
                                 this->sleep(this->data_length + DQN_SHORT_GUARD);
@@ -664,6 +672,8 @@ uint16_t Node::send_request(struct dqn_tr *tr, uint8_t num_of_slots,
                                 this->sleep(sleep_time);
                             }
                         }
+                        // we are done here
+                        this->has_sync = false; // force to resync TODO: remove this one
                     } else {
                         // enter CRQ
                         // no need to sleep to the start of the frame

@@ -14,7 +14,9 @@ struct RH_RF95::pin_config pc_feather = {
 };
 
 void setup() {
+    uint8_t hw_addr[HW_ADDR_LENGTH] = {0x42, 0x43, 0x44, 0x45, 0x26, 2};
     node = new (__node_buf)Node(pc_feather);
+    node->set_hw_addr(hw_addr);
     mprint("joining the network\n");
     node->join();
 }
